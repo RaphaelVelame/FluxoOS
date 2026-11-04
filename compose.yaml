@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fluxoos
+      POSTGRES_USER: fluxoos
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Defina DATABASE_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fluxoos"]
+      interval: 5s
+      retries: 5
+volumes:
+  postgres-data:

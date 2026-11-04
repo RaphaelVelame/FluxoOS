@@ -1,2 +1,7 @@
-/.mvn
 /.vscode
+/target/
+/data/
+/.tools/
+/.m2/
+/.env
+*.log
