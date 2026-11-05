@@ -1,6 +1,0 @@
-package br.com.fluxoos.domain.seguranca;
-
-public enum TipoEventoSeguranca {
-    LOGIN_SUCESSO, LOGIN_FALHA, LOGIN_BLOQUEADO,
-    SESSAO_REVOGADA, ACESSO_NEGADO, CSRF_INVALIDO, SENHA_ALTERADA
-}

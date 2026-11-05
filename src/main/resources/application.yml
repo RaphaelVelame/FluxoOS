@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: FluxoOS
+  datasource:
+    url: ${DATABASE_URL:jdbc:h2:file:./data/fluxoos;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH}
+    username: ${DATABASE_USER:sa}
+    password: ${DATABASE_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          no-cache: true
+
+server:
+  port: ${PORT:8080}
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  error:
+    include-message: never
+  servlet:
+    session:
+      cookie:
+        http-only: true
+  tomcat:
+    max-http-form-post-size: 512KB
+
+fluxoos:
+  cookie-secure: ${COOKIE_SECURE:false}
+  bootstrap-password: ${BOOTSTRAP_PASSWORD:}
+  demo: ${DEMO_DATA:false}
+
+logging:
+  level:
+    org.springframework.web: INFO

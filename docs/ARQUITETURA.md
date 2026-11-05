@@ -1,26 +1,27 @@
 # Arquitetura e decisões
 
-O projeto usa separação por responsabilidade inspirada em Clean Code e Clean Architecture, sem reescrever as regras de negócio em um segundo modelo.
+O projeto usa uma estrutura direta por responsabilidade, com controllers REST, services, repositories Spring Data JPA, entidades, DTOs e configuração. Enums e componentes de segurança têm seus próprios pacotes.
 
 ```mermaid
 flowchart LR
     UI[Interface mobile first] --> HTTP[Controladores HTTP]
-    HTTP --> APP[Casos de uso]
-    APP --> DOMAIN[Domínio Java]
-    APP --> PORTAS[Portas de persistência]
-    JDBC[Adaptadores JDBC] -. implementam .-> PORTAS
-    JDBC --> SQL[(H2 / PostgreSQL)]
-    CONFIG[Configuração Spring] --> APP
-    CONFIG --> JDBC
+    HTTP --> DTO[DTOs de entrada e saída]
+    HTTP --> SERVICE[Services e transações]
+    SERVICE --> ENTITY[Entidades JPA]
+    SERVICE --> REPO[Repositories Spring Data JPA]
+    REPO --> SQL[(H2 / PostgreSQL)]
+    CONFIG[Configuração YAML e Spring] --> SERVICE
 ```
 
-O domínio preserva entidades, enums, validações, eventos e o serviço de estoque originais. O serviço de estoque permanece no mesmo pacote dos agregados para acessar operações internas sem abrir setters públicos. A aplicação usa uma instância desse serviço por operação: a lista de movimentos didática não é tratada como armazenamento definitivo. A fonte de dados é o banco SQL.
+`controller` recebe e valida requisições. `service` contém as regras de estoque, OS, contas e autenticação. `repository` contém as interfaces `JpaRepository` e o armazenamento de sessões em memória. `entity` mapeia usuários, materiais, ordens, itens, movimentos, auditoria e idempotência. `dto` define os contratos HTTP. `config` reúne o filtro HTTP, beans de configuração e carga inicial. `enums` reúne todos os enums, inclusive os de segurança; `seguranca` contém PBKDF2, tokens e controle de tentativas.
 
-Os serviços de aplicação recebem contratos por construtor, coordenam permissões e delimitam transações. Foram usadas anotações Spring nos casos de uso para explicitar o limite transacional; o domínio permanece sem dependências de frameworks, verificado por teste. Não há ciclo aplicação → infraestrutura.
+As dependências são injetadas por construtor. Os services delimitam as transações com `@Transactional`, e o Hibernate acompanha as alterações nas entidades carregadas. As leituras são convertidas em DTOs dentro das transações, com `open-in-view: false`. Os controllers não acessam repositories nem abrem transações. O backend fornece JSON e a interface estática consome a API; não há portas, adaptadores ou templates MVC.
+
+`application.yml` configura o H2 por padrão e `application-postgres.yml` configura o perfil PostgreSQL. O Flyway aplica o esquema, e o Hibernate usa `ddl-auto: validate`. A sequência existente continua gerando os IDs com alocação de um por vez. A V1 permanece intacta e a V2 acrescenta `alvo_id` à auditoria, preservando os dados existentes.
 
 ## Estoque consistente
 
-O consumo bloqueia a linha da OS e depois a do material com `SELECT ... FOR UPDATE`. Após validar atribuição, estado, duplicidade, material ativo, quantidade e saldo, grava saldo, item, movimento, auditoria e idempotência. Qualquer falha reverte a transação inteira.
+O consumo bloqueia a OS e depois o material usando `@Lock(PESSIMISTIC_WRITE)` nos repositories JPA. Após validar atribuição, estado, duplicidade, material ativo, quantidade e saldo, grava saldo, item, movimento, auditoria e idempotência. Qualquer falha reverte a transação inteira. Os itens são uma coleção JPA da OS, persistida na tabela `itens_os`.
 
 A chave `Idempotency-Key` é obrigatória no consumo e na movimentação manual. Ela é vinculada ao usuário e ao hash do conteúdo. Reenvios idênticos devolvem o mesmo ID; conteúdo diferente com a mesma chave é recusado. O frontend mantém a chave enquanto o formulário está aberto. Após uma perda de resposta, repita sem fechar o formulário; recarregar a página cria uma operação nova, e o histórico deve ser consultado antes de repetir reposições manuais.
 
@@ -30,7 +31,7 @@ As leituras de listagem carregam os dados existentes sem paginação; essa escol
 
 ## Autenticação
 
-Os componentes PBKDF2, sessão opaca, CSRF, bloqueio e troca de senha foram reaproveitados. Credenciais e eventos usam JDBC. Sessões ficam em memória, com limite absoluto de oito horas e inatividade de trinta minutos. Os tokens secretos só são emitidos no login. O token de sessão fica em cookie HttpOnly; CSRF fica em sessionStorage por aba. Uma nova aba pode exigir novo login para obter CSRF.
+Os componentes PBKDF2, sessão opaca, CSRF, bloqueio e troca de senha foram preservados. Usuários, credenciais e eventos são persistidos por JPA. A troca de senha usa atualização condicional para detectar alterações concorrentes. Falhas de login são auditadas antes de recusar a autenticação. Sessões ficam em memória, com limite absoluto de oito horas e inatividade de trinta minutos. Os tokens secretos só são emitidos no login. O token de sessão fica em cookie HttpOnly; CSRF fica em sessionStorage por aba. Uma nova aba pode exigir novo login para obter CSRF.
 
 O sistema serve UI e API na mesma origem. Requisições mutáveis exigem sessão e CSRF; quando presente, o cabeçalho Origin deve corresponder à origem do servidor. O IP vem da conexão, sem confiar em X-Forwarded-For arbitrário. Atrás de proxy, configure origem e repasse confiável antes de abrir acesso externo. Não há CORS amplo.
 
@@ -42,4 +43,4 @@ HTML semântico, CSS mobile first e módulos JavaScript nativos. A navegação i
 
 ## Evolução recomendada
 
-Antes de escalar, adicionar testes PostgreSQL no CI, sessões e rate limit compartilhados, paginação, recuperação de acesso, políticas de retenção, transações para correção/devolução vinculada à OS e operações de backup/restauração ensaiadas. A autenticação HTTP atual pode ser substituída por um adaptador Spring Security sem alterar as entidades.
+Antes de escalar, adicionar testes PostgreSQL no CI, sessões e rate limit compartilhados, paginação, recuperação de acesso, políticas de retenção, transações para correção/devolução vinculada à OS e operações de backup/restauração ensaiadas.

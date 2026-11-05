@@ -14,7 +14,7 @@
 | `DEMO_DATA` | `false` | Carga demonstrativa somente em banco vazio |
 | `COOKIE_SECURE` | `false` local / `true` postgres | Cookie somente por HTTPS |
 
-`.env.example` documenta a configuração. `.env` é lido pelo Docker Compose; para Java exporte as variáveis ou use um gerenciador de segredos do seu ambiente. Nunca versione credenciais, banco ou backups.
+`application.yml` contém a configuração padrão, e `application-postgres.yml` contém as opções do perfil `postgres`. O acesso a dados usa Spring Data JPA/Hibernate, com validação do esquema criado pelo Flyway. `.env.example` documenta as variáveis. `.env` é lido pelo Docker Compose; para Java exporte as variáveis ou use um gerenciador de segredos do seu ambiente. Nunca versione credenciais, banco ou backups.
 
 ## Uso em celular
 

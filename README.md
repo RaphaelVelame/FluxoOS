@@ -1,8 +1,8 @@
 # FluxoOS
 
-Aplicação web de ordens de serviço e estoque, com backend Java e interface **mobile first**. O código original de domínio e segurança foi reaproveitado e reorganizado por responsabilidade.
+Aplicação web de ordens de serviço e estoque, com Java 17, Spring Boot, Spring Data JPA/Hibernate e interface **mobile first** em HTML, CSS e JavaScript.
 
-O [README original](README%20(2).md) é a referência funcional inicial. Este arquivo descreve o que está implementado e como executar a versão atual.
+O backend segue uma estrutura simples: **controller → service → repository**, com entidades JPA, DTOs, configuração, enums e segurança em pacotes separados. Este README reúne a documentação atual do projeto.
 
 ## Executar no Windows
 
@@ -39,7 +39,7 @@ Após a criação da conta, remova a variável de senha do ambiente. Para mudar 
 - Painel com ordens abertas, em andamento, concluídas e alertas de estoque.
 - Abertura de OS, filtros, atribuição e reatribuição de técnico, início, relato e histórico.
 - Cadastro de materiais, entradas, devoluções, ajustes positivos/negativos e ativação/desativação.
-- Consumo dentro da OS: atualização de saldo, item, movimento, auditoria e chave de idempotência na **mesma transação SQL**.
+- Consumo dentro da OS: atualização de saldo, item, movimento, auditoria e chave de idempotência na **mesma transação JPA**.
 - Conclusão com relato obrigatório, nome do responsável e assinatura PNG capturada por dedo, caneta ou mouse e persistida no banco.
 - Gestão de contas pela chefia, desativação de acesso e consulta de eventos de segurança.
 - Layout para celular com navegação inferior, sidebar em telas maiores, formulários acessíveis, estados vazios e mensagens de erro.
@@ -61,35 +61,36 @@ Essas verificações ocorrem no servidor. Não é possível iniciar atendimento 
 
 ```text
 src/main/java/br/com/fluxoos/
-  domain/
-    modelo/           Entidades, enums e regras originais de OS/estoque
-    seguranca/        Sessão, tokens e eventos de segurança
-  application/
-    porta/            Contratos dos repositórios e do hash de senha
-    seguranca/        Autenticação, sessões, troca de senha e controle de tentativas
-    ...Service.java   Casos de uso transacionais
-  infrastructure/
-    config/           Composição de dependências e carga inicial
-    persistencia/     Adaptadores JDBC
-    memoria/          Sessões e adaptadores originais úteis em testes
-    seguranca/        Implementação PBKDF2
-    web/              API, validação, proteção HTTP e respostas de erro
+  controller/         Endpoints REST e tratamento de erros
+  entity/             Entidades JPA e validações dos dados
+  dto/                Dados de entrada e saída da API
+  service/            Regras de negócio, autenticação e transações
+  config/             Configuração Spring, filtro HTTP e carga inicial
+  repository/         Repositories Spring Data JPA e armazenamento de sessões
+  enums/              Perfil, Prioridade, Situacao, TipoMovimento e TipoEventoSeguranca
+  seguranca/          PBKDF2, tokens, sessão e controle de tentativas
 src/main/resources/
+  application.yml     Configuração padrão (H2)
+  application-postgres.yml  Configuração do perfil PostgreSQL
   db/migration/       Migrações Flyway
   static/
     css/              Tokens visuais e estilos responsivos
     js/views/         Telas de painel, OS, estoque, equipe e conta
     js/               API, componentes, navegação e captura de assinatura
-src/test/java/        Testes de integração e isolamento do domínio
+src/test/java/        Testes de integração, segurança, carga inicial e estrutura
 docs/                 Arquitetura, API e operação
 scripts/              Execução e testes
 ```
 
-O domínio não importa Spring, HTTP, JDBC ou classes de infraestrutura. Serviços de aplicação coordenam os casos de uso através de portas. JDBC implementa essas portas. Os controladores traduzem requisições e respostas, usando DTOs que não expõem hashes ou assinaturas nas listagens. Não foram criadas camadas vazias, interfaces por classe ou um framework de frontend sem necessidade.
+Os controllers recebem requisições e chamam os services. Os services aplicam as regras e delimitam as transações com `@Transactional`. Os repositories estendem `JpaRepository` e persistem as entidades anotadas com `@Entity`; os itens da OS são mapeados com `@ElementCollection`. DTOs preservam o formato da API e evitam expor hashes, assinaturas nas listagens e objetos internos do Hibernate.
+
+A organização não usa arquitetura hexagonal, portas/adaptadores nem uma camada de views MVC no backend. A interface estática consome a API REST. O Spring Web continua fornecendo os controllers HTTP.
 
 ## Dados e PostgreSQL
 
-Por padrão, os dados ficam em **`data/fluxoos.mv.db`** (H2 em arquivo), preservados após reiniciar o servidor. A pasta é ignorada pelo Git. O Flyway cria e versiona o esquema.
+Por padrão, os dados ficam em **`data/fluxoos.mv.db`** (H2 em arquivo), preservados após reiniciar o servidor. A pasta é ignorada pelo Git. Toda a configuração da aplicação está em **YAML**; variáveis de ambiente continuam disponíveis.
+
+O Flyway cria e versiona o esquema, e o Hibernate valida os mapeamentos com `ddl-auto: validate`. A migração V1 foi preservada para as bases existentes; a V2 acrescenta o alvo dos eventos de segurança. JPA/Hibernate fazem o acesso aos dados. As URLs de conexão continuam com o prefixo `jdbc:`, exigido pelos drivers H2 e PostgreSQL.
 
 Para PostgreSQL, instale Docker ou disponibilize seu próprio banco. Com Docker Compose:
 
@@ -115,7 +116,7 @@ Cada banco tem sua própria carga inicial. Trocar a URL não transfere os dados 
 java -jar target/fluxoos-1.0.0-SNAPSHOT.jar
 ```
 
-No Linux/macOS, use `sh ./scripts/testar.sh` e `sh ./mvnw verify`. Os testes usam H2 em memória e não alteram a base local. Cobrem fluxo HTTP completo, autenticação/CSRF, permissões, transações com rollback real, concorrência de consumo, idempotência, assinatura e arquitetura. O workflow GitHub Actions executa `verify` com Java 17.
+No Linux/macOS, use `sh ./scripts/testar.sh` e `sh ./mvnw verify`. Os testes usam H2 em memória e não alteram a base local. Cobrem fluxo HTTP completo, autenticação/CSRF, permissões, transações JPA com rollback real, concorrência de consumo, idempotência, assinatura, carga demonstrativa e separação dos controllers. O workflow GitHub Actions executa `verify` com Java 17.
 
 Consulte [arquitetura](docs/ARQUITETURA.md), [API](docs/API.md) e [operação](docs/OPERACAO.md).
 

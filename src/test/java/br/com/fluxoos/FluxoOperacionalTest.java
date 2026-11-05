@@ -1,9 +1,10 @@
 package br.com.fluxoos;
 
-import br.com.fluxoos.application.*;
-import br.com.fluxoos.application.porta.*;
-import br.com.fluxoos.domain.modelo.*;
-import br.com.fluxoos.infrastructure.seguranca.SenhaPbkdf2;
+import br.com.fluxoos.service.*;
+import br.com.fluxoos.repository.*;
+import br.com.fluxoos.entity.*;
+import br.com.fluxoos.enums.*;
+import br.com.fluxoos.seguranca.SenhaPbkdf2;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
@@ -11,7 +12,7 @@ import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
+
 import org.springframework.test.web.servlet.*;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import java.awt.image.BufferedImage;
@@ -32,16 +33,25 @@ class FluxoOperacionalTest {
     private static final String HASH = new SenhaPbkdf2().gerarHash(SENHA.toCharArray());
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
-    @Autowired JdbcTemplate jdbc;
-    @Autowired RepositorioOperacional dados;
-    @Autowired RepositorioUsuarios usuarios;
+    @Autowired MaterialRepository materiais;
+    @Autowired OrdemServicoRepository ordensRepository;
+    @Autowired MovimentoEstoqueRepository movimentos;
+    @Autowired EventoAuditoriaRepository auditoria;
+    @Autowired RequisicaoProcessadaRepository requisicoes;
+    private final Map<Long, Usuario> contas = new HashMap<>();
+
+    @Autowired UsuarioRepository usuarios;
     @Autowired OrdemServicoService ordens;
-    @Autowired EstoqueApplicationService estoque;
+    @Autowired EstoqueService estoque;
 
     @BeforeEach void preparar() {
-        for (String tabela : List.of("idempotencia", "itens_os", "movimentos", "auditoria", "ordens", "materiais", "usuarios")) {
-            jdbc.update("DELETE FROM " + tabela);
-        }
+        requisicoes.deleteAllInBatch();
+        movimentos.deleteAllInBatch();
+        auditoria.deleteAllInBatch();
+        ordensRepository.deleteAll();
+        materiais.deleteAllInBatch();
+        usuarios.deleteAllInBatch();
+        contas.clear();
         inserirUsuario(1, "admin", Perfil.CHEFE);
         inserirUsuario(2, "tecnico", Perfil.TECNICO);
         inserirUsuario(3, "outro", Perfil.TECNICO);
@@ -52,7 +62,7 @@ class FluxoOperacionalTest {
         Acesso admin = login("admin");
         JsonNode criada = enviar(post("/api/ordens"), Map.of("solicitante", "Ana", "local", "Escola", "problema", "Rede indisponível", "prioridade", "ALTA"), admin, 201);
         long id = criada.get("id").asLong();
-        enviar(post("/api/ordens/" + id + "/atribuicao"), Map.of("tecnicoId", 2), admin, 200);
+        enviar(post("/api/ordens/" + id + "/atribuicao"), Map.of("tecnicoId", usuario(2).getId()), admin, 200);
         JsonNode material = enviar(post("/api/materiais"), Map.of("codigo", "RJ45", "nome", "Conector", "unidade", "un", "minimo", 5), admin, 201);
         long materialId = material.get("id").asLong();
         var entrada = Map.of("tipo", "ENTRADA", "variacao", 20, "observacao", "Reposição");
@@ -66,7 +76,7 @@ class FluxoOperacionalTest {
         var consumo = Map.of("materialId", materialId, "quantidade", 2, "observacao", "Ponto da recepção");
         enviar(post("/api/ordens/" + id + "/materiais").header("Idempotency-Key", chaveConsumo), consumo, tecnico, 200);
         enviar(post("/api/ordens/" + id + "/materiais").header("Idempotency-Key", chaveConsumo), consumo, tecnico, 200);
-        assertThat(dados.material(materialId, false).getQuantidade()).isEqualTo(18);
+        assertThat(materiais.findById(materialId).orElseThrow().getQuantidade()).isEqualTo(18);
         String assinatura = assinatura();
         enviar(post("/api/ordens/" + id + "/conclusao"), Map.of("responsavel", "Ana", "assinatura", assinatura), tecnico, 409);
         enviar(put("/api/ordens/" + id + "/relato"), Map.of("relato", "Conectores substituídos e conexão testada."), tecnico, 200);
@@ -77,8 +87,8 @@ class FluxoOperacionalTest {
         assertThat(finalizada.has("referenciaAssinatura")).isFalse();
         assertThat(finalizada.get("itens")).hasSize(1);
         mvc.perform(get("/api/ordens/" + id + "/assinatura").cookie(tecnico.cookie)).andExpect(status().isOk()).andExpect(content().contentType("image/png"));
-        assertThat(dados.historico(id)).hasSize(6);
-        assertThat(dados.listarMovimentos()).hasSize(2);
+        assertThat(ordens.historico(id)).hasSize(6);
+        assertThat(movimentos.findAll()).hasSize(2);
         enviar(post("/api/ordens/" + id + "/inicio"), null, tecnico, 409);
     }
 
@@ -102,9 +112,9 @@ class FluxoOperacionalTest {
         Material material = prepararMaterial(3);
         assertThatThrownBy(() -> estoque.consumir(usuario(2), id, material.getId(), 4, "Uso", chave()))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("insuficiente");
-        assertThat(dados.material(material.getId(), false).getQuantidade()).isEqualTo(3);
-        assertThat(dados.ordem(id, false).getItens()).isEmpty();
-        assertThat(dados.listarMovimentos()).isEmpty();
+        assertThat(materiais.findById(material.getId()).orElseThrow().getQuantidade()).isEqualTo(3);
+        assertThat(ordens.buscar(id).itens()).isEmpty();
+        assertThat(movimentos.findAll()).isEmpty();
     }
 
     @Test void falhaNaPersistenciaReverteSaldoEItemNaMesmaTransacao() {
@@ -112,9 +122,9 @@ class FluxoOperacionalTest {
         Material material = prepararMaterial(10);
         assertThatThrownBy(() -> estoque.consumir(usuario(2), id, material.getId(), 2, "x".repeat(501), chave()))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-        assertThat(dados.material(material.getId(), false).getQuantidade()).isEqualTo(10);
-        assertThat(dados.ordem(id, false).getItens()).isEmpty();
-        assertThat(dados.listarMovimentos()).isEmpty();
+        assertThat(materiais.findById(material.getId()).orElseThrow().getQuantidade()).isEqualTo(10);
+        assertThat(ordens.buscar(id).itens()).isEmpty();
+        assertThat(movimentos.findAll()).isEmpty();
     }
 
     @Test void consumoConcorrenteNaoPermiteSaldoNegativo() throws Exception {
@@ -134,8 +144,8 @@ class FluxoOperacionalTest {
             int sucessos = 0;
             for (Future<Boolean> resultado : resultados) if (resultado.get(10, TimeUnit.SECONDS)) sucessos++;
             assertThat(sucessos).isEqualTo(1);
-            assertThat(dados.material(material.getId(), false).getQuantidade()).isEqualTo(3);
-            assertThat(dados.listarMovimentos()).hasSize(1);
+            assertThat(materiais.findById(material.getId()).orElseThrow().getQuantidade()).isEqualTo(3);
+            assertThat(movimentos.findAll()).hasSize(1);
         } finally { pool.shutdownNow(); }
     }
 
@@ -148,7 +158,21 @@ class FluxoOperacionalTest {
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("chave");
         assertThatThrownBy(() -> estoque.consumir(usuario(2), id, material.getId(), 2, "Uso", chave()))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("já registrado");
-        assertThat(dados.material(material.getId(), false).getQuantidade()).isEqualTo(8);
+        assertThat(materiais.findById(material.getId()).orElseThrow().getQuantidade()).isEqualTo(8);
+    }
+
+    @Test void persistenciaNaoSobrescreveChaveDeIdempotenciaJaConfirmada() {
+        Material material = prepararMaterial(10);
+        Usuario admin = usuario(1);
+        String chave = chave();
+        long movimentoId = estoque.movimentar(admin, material.getId(), TipoMovimento.ENTRADA, 5, "Reposição", chave);
+        var id = new RequisicaoProcessada.Chave(admin.getId(), chave);
+        String conteudo = requisicoes.findById(id).orElseThrow().getConteudo();
+        assertThatThrownBy(() -> requisicoes.save(new RequisicaoProcessada(admin.getId(), chave, "outro", movimentoId)))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(requisicoes.findById(id).orElseThrow().getConteudo()).isEqualTo(conteudo);
+        assertThat(estoque.movimentar(admin, material.getId(), TipoMovimento.ENTRADA, 5, "Reposição", chave)).isEqualTo(movimentoId);
+        assertThat(materiais.findById(material.getId()).orElseThrow().getQuantidade()).isEqualTo(15);
     }
 
     @Test void tecnicoNaoMovimentaEstoqueManualNemMaterialInativo() {
@@ -171,7 +195,7 @@ class FluxoOperacionalTest {
         javax.imageio.ImageIO.write(branco, "png", bytes);
         assertThatThrownBy(() -> ordens.concluir(usuario(2), id, "Ana", "data:image/png;base64," + Base64.getEncoder().encodeToString(bytes.toByteArray())))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThat(dados.ordem(id, false).getSituacao()).isEqualTo(Situacao.EM_ANDAMENTO);
+        assertThat(ordens.buscar(id).situacao()).isEqualTo(Situacao.EM_ANDAMENTO);
     }
 
     @Test void trocaSenhaRevogaSessoesEContaDesativadaPerdeAcesso() throws Exception {
@@ -180,7 +204,7 @@ class FluxoOperacionalTest {
         enviar(post("/api/auth/senha"), Map.of("atual", SENHA, "nova", "Minha-nova-senha-longa-2026!"), primeiro, 200);
         mvc.perform(get("/api/auth/me").cookie(segundo.cookie)).andExpect(status().isUnauthorized());
         Acesso outro = login("outro");
-        enviar(patch("/api/usuarios/3/status"), Map.of("ativo", false), login("admin"), 200);
+        enviar(patch("/api/usuarios/" + usuario(3).getId() + "/status"), Map.of("ativo", false), login("admin"), 200);
         mvc.perform(get("/api/auth/me").cookie(outro.cookie)).andExpect(status().isUnauthorized());
     }
 
@@ -189,7 +213,7 @@ class FluxoOperacionalTest {
         enviar(post("/api/materiais"), Map.of("codigo", "", "nome", "", "unidade", "", "minimo", -1), admin, 400);
         JsonNode lista = enviar(get("/api/usuarios"), null, admin, 200);
         assertThat(lista.toString()).doesNotContain("hash_senha", "pbkdf2", SENHA);
-        enviar(patch("/api/usuarios/1/status"), Map.of("ativo", false), admin, 400);
+        enviar(patch("/api/usuarios/" + usuario(1).getId() + "/status"), Map.of("ativo", false), admin, 400);
         enviar(get("/api/ordens/999999"), null, admin, 404);
     }
 
@@ -198,23 +222,22 @@ class FluxoOperacionalTest {
             JsonNode erro = enviar(post("/api/auth/login"), Map.of("usuario", "inexistente", "senha", "senha-errada"), null, 401);
             assertThat(erro.get("mensagem").asText()).contains("Não foi possível autenticar");
         }
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM auditoria WHERE tipo='LOGIN_BLOQUEADO'", Integer.class)).isPositive();
+        assertThat(auditoria.findByTipoInOrderByIdDesc(List.of("LOGIN_BLOQUEADO")).size()).isPositive();
     }
 
     private void inserirUsuario(long id, String login, Perfil perfil) {
-        jdbc.update("INSERT INTO usuarios (id,nome_usuario,nome_completo,perfil,ativo,hash_senha) VALUES (?,?,?,?,?,?)",
-                id, login, login, perfil.name(), true, HASH);
+        contas.put(id, usuarios.save(new Usuario(login, login, perfil, HASH)));
     }
-    private Usuario usuario(long id) { return usuarios.buscarPorId(id).orElseThrow(); }
+    private Usuario usuario(long id) { return usuarios.findById(contas.get(id).getId()).orElseThrow(); }
     private long prepararOrdem() {
         OrdemServico o = ordens.abrir(usuario(1), "Ana", "Escola", "Rede", Prioridade.ALTA);
-        ordens.atribuir(usuario(1), o.getId(), 2);
+        ordens.atribuir(usuario(1), o.getId(), usuario(2).getId());
         ordens.iniciar(usuario(2), o.getId());
         return o.getId();
     }
     private Material prepararMaterial(int quantidade) {
-        Material m = new Material(dados.proximoId(), chave(), "Conector", "un", quantidade, 5, true);
-        dados.inserirMaterial(m);
+        Material m = new Material(chave(), "Conector", "un", quantidade, 5, true);
+        materiais.save(m);
         return m;
     }
     private static String chave() { return UUID.randomUUID().toString(); }
