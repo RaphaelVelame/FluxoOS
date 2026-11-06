@@ -6,13 +6,13 @@ O backend segue uma estrutura simples: **controller → service → repository**
 
 ## Executar no Windows
 
-Requer **JDK 17 ou superior** e conexão à internet na primeira compilação. O Maven Wrapper baixa o Maven e as dependências oficiais; não é necessário instalar Maven, Node ou um banco externo para começar.
+Requer **JDK 17 ou superior** e conexão à internet na primeira compilação. O Maven Wrapper baixa o Maven e as dependências oficiais; não é necessário instalar Maven ou Node. A integração local usa PostgreSQL quando o perfil `postgres` está configurado no `.env`.
 
 ```powershell
 .\scripts\executar.ps1
 ```
 
-Na primeira execução, o script pede uma senha de pelo menos 15 caracteres para a conta **`admin`**. Abra **http://localhost:8080** após a mensagem `Started FluxoOsApplication`.
+O script carrega o `.env` da raiz, preservando a prioridade das variáveis já definidas no terminal, e verifica a conexão PostgreSQL antes de iniciar. Na primeira execução de um banco sem usuários, pede uma senha de pelo menos 15 caracteres para a conta **`admin`**. Abra **http://localhost:8080** após a mensagem `Started FluxoOsApplication`. Para usar H2 explicitamente, execute `./scripts/executar.ps1 -H2`.
 
 Para iniciar uma base nova com materiais, três ordens e uma conta `tecnico` de demonstração:
 
@@ -88,11 +88,21 @@ A organização não usa arquitetura hexagonal, portas/adaptadores nem uma camad
 
 ## Dados e PostgreSQL
 
-Por padrão, os dados ficam em **`data/fluxoos.mv.db`** (H2 em arquivo), preservados após reiniciar o servidor. A pasta é ignorada pelo Git. Toda a configuração da aplicação está em **YAML**; variáveis de ambiente continuam disponíveis.
+Com o perfil **`postgres`**, os dados ficam no PostgreSQL configurado por `DATABASE_URL`, `DATABASE_USER` e `DATABASE_PASSWORD`. Na instalação local integrada, o banco e o usuário da aplicação se chamam **`fluxoos`**, no servidor **`localhost:5432`**. O usuário da aplicação não tem privilégios de superusuário, criação de bancos ou criação de papéis. A senha de conexão fica no `.env`, ignorado pelo Git.
 
-O Flyway cria e versiona o esquema, e o Hibernate valida os mapeamentos com `ddl-auto: validate`. A migração V1 foi preservada para as bases existentes; a V2 acrescenta o alvo dos eventos de segurança. JPA/Hibernate fazem o acesso aos dados. As URLs de conexão continuam com o prefixo `jdbc:`, exigido pelos drivers H2 e PostgreSQL.
+Sem o perfil PostgreSQL, a execução direta usa **`data/fluxoos.mv.db`** (H2 em arquivo). A opção `-H2` do script também seleciona essa base. Os dois bancos preservam os dados após reiniciar e são independentes.
 
-Para PostgreSQL, instale Docker ou disponibilize seu próprio banco. Com Docker Compose:
+O Flyway cria e versiona o esquema, e o Hibernate valida os mapeamentos com `ddl-auto: validate`. O projeto fixa Flyway 11.20.0 para reconhecer PostgreSQL 18, conforme o [módulo oficial dessa versão](https://github.com/flyway/flyway/blob/flyway-11.20.0/flyway-database/flyway-database-postgresql/src/main/java/org/flywaydb/database/postgresql/PostgreSQLDatabase.java#L47), mantendo a mesma versão nos módulos principal e PostgreSQL. A migração V1 foi preservada para as bases existentes; a V2 acrescenta o alvo dos eventos de segurança. JPA/Hibernate fazem o acesso aos dados. As URLs de conexão continuam com o prefixo `jdbc:`, exigido pelos drivers H2 e PostgreSQL.
+
+Para usar outra instalação nativa do PostgreSQL, crie um banco e um usuário próprios para a aplicação, copie `.env.example` para `.env` e ajuste a conexão. No Windows:
+
+```powershell
+.\scripts\executar.ps1
+```
+
+O script encontra `psql` no `PATH` ou em `C:\Program Files\PostgreSQL\<versão>\bin`. A senha inicial do `admin` da aplicação é independente da senha do banco. Para execução local por HTTP, o script usa `COOKIE_SECURE=false` quando essa opção não foi definida. A execução direta do perfil `postgres` continua exigindo cookies HTTPS por padrão.
+
+Como alternativa, use Docker Compose, desde que a porta 5432 esteja livre:
 
 ```powershell
 $env:DATABASE_PASSWORD = 'defina-uma-senha-do-banco'
@@ -106,20 +116,23 @@ $env:BOOTSTRAP_PASSWORD = 'defina-a-senha-do-admin-no-novo-banco'
 .\mvnw.cmd spring-boot:run
 ```
 
-Cada banco tem sua própria carga inicial. Trocar a URL não transfere os dados H2. O Compose inicia somente o banco; execute o backend separadamente.
+Cada banco tem sua própria carga inicial. Trocar a URL não transfere os dados H2. O Compose inicia somente o banco; execute o backend separadamente. `mvnw` e `java -jar` não carregam `.env` automaticamente; exporte as variáveis ao usá-los diretamente.
 
 ## Testes e distribuição
 
 ```powershell
 .\scripts\testar.ps1
+.\scripts\testar-postgres.ps1
 .\mvnw.cmd verify
 java -jar target/fluxoos-1.0.0-SNAPSHOT.jar
 ```
 
-No Linux/macOS, use `sh ./scripts/testar.sh` e `sh ./mvnw verify`. Os testes usam H2 em memória e não alteram a base local. Cobrem fluxo HTTP completo, autenticação/CSRF, permissões, transações JPA com rollback real, concorrência de consumo, idempotência, assinatura, carga demonstrativa e separação dos controllers. O workflow GitHub Actions executa `verify` com Java 17.
+No Linux/macOS, use `sh ./scripts/testar.sh` e `sh ./mvnw verify`. A suíte padrão usa H2 em memória e não altera a base local. Cobre fluxo HTTP completo, autenticação/CSRF, permissões, transações JPA com rollback real, concorrência de consumo, idempotência, assinatura, carga demonstrativa e separação dos controllers.
+
+`testar-postgres.ps1` carrega a conexão do `.env`, cria um esquema temporário com nome aleatório, aplica as migrações e executa os mesmos testes operacionais no PostgreSQL real. O esquema é removido ao final, inclusive quando os testes falham; as tabelas do esquema `public` permanecem preservadas. A URL de conexão para esse script deve estar sem parâmetros. Uma interrupção forçada do processo pode exigir a remoção manual do esquema `fluxoos_test_...` deixado para trás. O GitHub Actions executa `verify` com Java 17 e repete os testes operacionais em um PostgreSQL 18 descartável.
 
 Consulte [arquitetura](docs/ARQUITETURA.md), [API](docs/API.md) e [operação](docs/OPERACAO.md).
 
 ## Limites da entrega
 
-Esta é uma aplicação funcional para execução local e evolução, sem publicação automática. A configuração PostgreSQL está disponível, mas precisa ser validada contra sua instância antes de implantação. Sessões e limites de login continuam em memória: reiniciar exige novo login, e múltiplas instâncias precisam de armazenamento compartilhado. Backups, HTTPS, monitoração externa, recuperação de desastre e políticas de retenção precisam ser configurados no ambiente de implantação. A assinatura é uma imagem do atendimento; não implementa certificação digital. Não há envio de e-mails, recuperação de senha, anexos, modo offline ou aplicativo nativo.
+Esta é uma aplicação funcional para execução local e evolução, sem publicação automática. A integração inclui validação das migrações e do fluxo operacional em PostgreSQL real; repita essa verificação ao trocar o ambiente de destino. Sessões e limites de login continuam em memória: reiniciar exige novo login, e múltiplas instâncias precisam de armazenamento compartilhado. Backups, HTTPS, monitoração externa, recuperação de desastre e políticas de retenção precisam ser configurados no ambiente de implantação. A assinatura é uma imagem do atendimento; não implementa certificação digital. Não há envio de e-mails, recuperação de senha, anexos, modo offline ou aplicativo nativo.

@@ -24,8 +24,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:h2:mem:fluxoos-tests;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=5000",
-        "fluxoos.bootstrap-password=Senha-inicial-testes-2026!", "fluxoos.demo=false"
+        "spring.datasource.url=${TEST_DATABASE_URL:jdbc:h2:mem:fluxoos-tests;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=5000}",
+        "spring.datasource.username=${TEST_DATABASE_USER:sa}", "spring.datasource.password=${TEST_DATABASE_PASSWORD:}",
+        "fluxoos.bootstrap-password=Senha-inicial-testes-2026!", "fluxoos.demo=false", "fluxoos.cookie-secure=false"
 })
 @AutoConfigureMockMvc
 class FluxoOperacionalTest {

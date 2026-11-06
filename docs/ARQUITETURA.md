@@ -17,7 +17,7 @@ flowchart LR
 
 As dependências são injetadas por construtor. Os services delimitam as transações com `@Transactional`, e o Hibernate acompanha as alterações nas entidades carregadas. As leituras são convertidas em DTOs dentro das transações, com `open-in-view: false`. Os controllers não acessam repositories nem abrem transações. O backend fornece JSON e a interface estática consome a API; não há portas, adaptadores ou templates MVC.
 
-`application.yml` configura o H2 por padrão e `application-postgres.yml` configura o perfil PostgreSQL. O Flyway aplica o esquema, e o Hibernate usa `ddl-auto: validate`. A sequência existente continua gerando os IDs com alocação de um por vez. A V1 permanece intacta e a V2 acrescenta `alvo_id` à auditoria, preservando os dados existentes.
+`application.yml` configura o H2 por padrão e `application-postgres.yml` configura o perfil PostgreSQL. No Windows, `scripts/executar.ps1` carrega a conexão e o perfil do `.env` local, verifica a autenticação com `psql` e só solicita a senha inicial quando o banco selecionado não tem usuários. O Flyway 11.20.0 aplica o esquema, incluindo suporte ao PostgreSQL 18, e o Hibernate usa `ddl-auto: validate`. A sequência existente continua gerando os IDs com alocação de um por vez. A V1 permanece intacta e a V2 acrescenta `alvo_id` à auditoria, preservando os dados existentes.
 
 ## Estoque consistente
 
@@ -43,4 +43,4 @@ HTML semântico, CSS mobile first e módulos JavaScript nativos. A navegação i
 
 ## Evolução recomendada
 
-Antes de escalar, adicionar testes PostgreSQL no CI, sessões e rate limit compartilhados, paginação, recuperação de acesso, políticas de retenção, transações para correção/devolução vinculada à OS e operações de backup/restauração ensaiadas.
+Os testes operacionais executam em PostgreSQL 18 no CI e podem ser repetidos localmente com `scripts/testar-postgres.ps1`, em um esquema temporário isolado. Antes de escalar, adicionar sessões e rate limit compartilhados, paginação, recuperação de acesso, políticas de retenção, transações para correção/devolução vinculada à OS e operações de backup/restauração ensaiadas.
