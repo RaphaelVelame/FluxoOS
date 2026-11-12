@@ -6,6 +6,8 @@ import { estoque } from './views/inventory.js';
 import { equipe, conta } from './views/team.js';
 
 const estado = { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [] };
+let sincronizacaoPendente = null;
+let sincronizando = null;
 const navegacao = [['inicio', 'Visão geral', 'grid'], ['ordens', 'Ordens de serviço', 'clipboard'], ['estoque', 'Estoque', 'box'], ['equipe', 'Equipe', 'users']];
 const contexto = {
   estado,
@@ -13,15 +15,56 @@ const contexto = {
   get chefe() { return estado.usuario?.perfil === 'CHEFE'; },
   nomeUsuario: id => estado.usuarios.find(u => u.id === id)?.nome || 'Não designado',
   iniciais: id => (estado.usuarios.find(u => u.id === id)?.nome || '?').split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join(''),
-  atualizar, pagina, encerrar,
+  atualizar, pagina, encerrar, aposGravar,
   novaOrdem: () => novaOrdem(contexto),
 };
 
 async function atualizar() {
+  const usuario = estado.usuario;
   const [ordens, materiais, usuarios, movimentos] = await Promise.all([
     api('/ordens'), api('/materiais'), api('/usuarios'), api('/movimentos'),
   ]);
-  Object.assign(estado, { ordens, materiais, usuarios, movimentos });
+  if (usuario === estado.usuario) Object.assign(estado, { ordens, materiais, usuarios, movimentos });
+}
+
+function mostrarPendencia(carregando = false) {
+  pagina(`<div class="empty-state"><h2>${escape(sincronizacaoPendente?.mensagem || 'Dados indisponíveis')}</h2><p>${carregando ? 'Atualizando os dados da tela…' : 'Não foi possível carregar os dados atualizados. Use o botão abaixo para continuar.'}</p><button id="retry-sync" class="button" ${carregando ? 'disabled' : ''}>Atualizar dados</button></div>`,
+    { titulo: 'Atualização pendente', subtitulo: sincronizacaoPendente ? 'Operação concluída com sucesso' : 'Tente carregar os dados novamente' });
+  document.querySelector('#retry-sync')?.addEventListener('click', () => { mostrarPendencia(true); void sincronizar(); });
+}
+
+async function sincronizar() {
+  if (sincronizando) return sincronizando;
+  const usuario = estado.usuario;
+  const pendente = sincronizacaoPendente;
+  const tarefa = (async () => {
+    try {
+      await atualizar();
+      if (usuario !== estado.usuario || sincronizacaoPendente !== pendente) return false;
+      sincronizacaoPendente = null;
+      if (await rota() === false) throw new Error('Não foi possível atualizar esta página.');
+      toast(pendente?.mensagem || 'Dados atualizados.');
+      return true;
+    } catch {
+      if (usuario !== estado.usuario) return false;
+      if (sincronizacaoPendente && sincronizacaoPendente !== pendente) return false;
+      sincronizacaoPendente = pendente;
+      mostrarPendencia();
+      return false;
+    }
+  })();
+  sincronizando = tarefa;
+  try { return await tarefa; }
+  finally { if (sincronizando === tarefa) sincronizando = null; }
+}
+
+async function aposGravar(mensagem, destino) {
+  if (!estado.usuario) return;
+  sincronizacaoPendente = { mensagem };
+  if (destino) history.pushState(null, '', `#${destino}`);
+  mostrarPendencia(true);
+  if (sincronizando) await sincronizando;
+  await sincronizar();
 }
 
 function login() {
@@ -39,9 +82,8 @@ function login() {
       salvarCsrf(dados.csrf);
       estado.usuario = dados.usuario;
       form.reset();
-      await atualizar();
       shell();
-      await rota();
+      await aposGravar('Login realizado.');
     } catch (e) { form.querySelector('.form-error').textContent = e.message; botao.disabled = false; }
   };
 }
@@ -58,7 +100,7 @@ function shell() {
   };
   document.querySelector('#refresh').onclick = async e => {
     const botao = e.currentTarget; botao.disabled = true;
-    try { await atualizar(); await rota(); toast('Dados atualizados.'); } catch (e) { toast(e.message, true); }
+    try { await sincronizar(); }
     finally { botao.disabled = false; }
   };
 }
@@ -73,6 +115,7 @@ function pagina(html, { titulo, subtitulo, acao } = {}) {
 
 async function rota() {
   if (!estado.usuario) return;
+  if (sincronizacaoPendente) { mostrarPendencia(!!sincronizando); return false; }
   const caminho = location.hash.slice(1) || 'inicio';
   const [nome, id] = caminho.split('/');
   document.querySelectorAll('[data-nav]').forEach(el => {
@@ -89,12 +132,16 @@ async function rota() {
     else if (nome === 'equipe') equipe(contexto);
     else if (nome === 'conta') conta(contexto);
     else dashboard(contexto);
+    return true;
   } catch (e) {
     if (estado.usuario) pagina(`<div class="empty-state"><h2>Não foi possível abrir esta página</h2><p>${escape(e.message)}</p><a class="button secondary" href="#inicio">Voltar ao início</a></div>`, { titulo: 'Página indisponível', subtitulo: 'Tente atualizar os dados' });
+    return false;
   }
 }
 
 function encerrar() {
+  sincronizacaoPendente = null;
+  sincronizando = null;
   salvarCsrf(null);
   Object.assign(estado, { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [] });
   location.hash = 'inicio';
@@ -102,9 +149,13 @@ function encerrar() {
 }
 
 window.addEventListener('hashchange', rota);
-window.addEventListener('sessao-expirada', () => { encerrar(); toast('Sua sessão expirou. Entre novamente.', true); });
+window.addEventListener('sessao-expirada', () => {
+  const confirmacao = sincronizacaoPendente?.mensagem;
+  encerrar();
+  toast(`${confirmacao ? confirmacao + ' ' : ''}Sua sessão expirou. Entre novamente.`, true);
+});
 try {
   estado.usuario = await api('/auth/me');
   if (!sessionStorage.getItem('fluxoos.csrf')) { login(); }
-  else { await atualizar(); shell(); await rota(); }
+  else { shell(); await sincronizar(); }
 } catch { login(); }

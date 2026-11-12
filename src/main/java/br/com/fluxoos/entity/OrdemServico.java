@@ -14,6 +14,12 @@ public class OrdemServico {
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "ordem_ids")
     @SequenceGenerator(name = "ordem_ids", sequenceName = "sequencia_ids", allocationSize = 1)
     private Long id;
+    @Column(name = "autor_abertura_id", updatable = false)
+    private Long autorAberturaId;
+    @Column(name = "chave_abertura", length = 80, updatable = false)
+    private String chaveAbertura;
+    @Column(name = "conteudo_abertura", length = 64, updatable = false)
+    private String conteudoAbertura;
     @Column(nullable = false, length = 160)
     private String solicitante;
     @Column(nullable = false, length = 240)
@@ -59,6 +65,15 @@ public class OrdemServico {
         }
         situacao = Situacao.EM_ANDAMENTO;
     }
+
+    public void identificarAbertura(long autorId, String chave, String conteudo) {
+        if (id != null || chaveAbertura != null) throw new IllegalStateException("Abertura já identificada.");
+        autorAberturaId = autorId;
+        chaveAbertura = chave;
+        conteudoAbertura = conteudo;
+    }
+
+    public String getConteudoAbertura() { return conteudoAbertura; }
 
     public void registrarRelato(String relato) {
         exigirEmAndamento();

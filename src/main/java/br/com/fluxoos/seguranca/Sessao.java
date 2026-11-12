@@ -12,18 +12,21 @@ public final class Sessao {
     private final String hashToken;
     private final String hashTokenCsrf;
     private final long usuarioId;
+    private final long versaoUsuario;
     private final Instant criadaEm;
     private final Instant expiraEm;
     private final Duration limiteInatividade;
     private Instant ultimoAcesso;
     private Instant revogadaEm;
 
-    public Sessao(String hashToken, String hashTokenCsrf, long usuarioId,
+    public Sessao(String hashToken, String hashTokenCsrf, long usuarioId, long versaoUsuario,
            Instant criadaEm, Duration tempoAbsoluto, Duration limiteInatividade) {
         this.hashToken = Objects.requireNonNull(hashToken);
         this.hashTokenCsrf = Objects.requireNonNull(hashTokenCsrf);
         if (usuarioId <= 0) throw new IllegalArgumentException("ID inválido");
         this.usuarioId = usuarioId;
+        if (versaoUsuario < 0) throw new IllegalArgumentException("Versão inválida");
+        this.versaoUsuario = versaoUsuario;
         this.criadaEm = Objects.requireNonNull(criadaEm);
         if (tempoAbsoluto.isZero() || tempoAbsoluto.isNegative()
                 || limiteInatividade.isZero() || limiteInatividade.isNegative()) {
@@ -50,6 +53,7 @@ public final class Sessao {
 
     public String getHashToken() { return hashToken; }
     public long getUsuarioId() { return usuarioId; }
+    public long getVersaoUsuario() { return versaoUsuario; }
     public Instant getExpiraEm() { return expiraEm; }
     public Instant getCriadaEm() { return criadaEm; }
     public synchronized Instant getUltimoAcesso() { return ultimoAcesso; }

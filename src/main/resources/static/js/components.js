@@ -36,26 +36,38 @@ export function toast(mensagem, erro = false) {
   timer = setTimeout(() => { el.className = ''; }, 5000);
 }
 
-export function modal(titulo, conteudo, { aoEnviar, textoBotao = 'Salvar', largo = false, aoAbrir } = {}) {
+export function modal(titulo, conteudo, { aoEnviar, aoSalvar, textoBotao = 'Salvar', largo = false, aoAbrir } = {}) {
+  let enviando = false;
+  let confirmado = false;
   const el = document.querySelector('#modal');
   el.className = largo ? 'wide' : '';
   el.innerHTML = `<div class="modal-header"><h2 id="modal-title">${escape(titulo)}</h2><button class="icon-button" type="button" data-close aria-label="Fechar">${icon('close')}</button></div>
     <form class="modal-form"><div class="modal-body">${conteudo}<p class="form-error" role="alert"></p></div>
     ${aoEnviar ? `<div class="modal-footer"><button type="button" class="button secondary" data-close>Cancelar</button><button class="button" type="submit">${escape(textoBotao)}</button></div>` : ''}</form>`;
-  el.querySelectorAll('[data-close]').forEach(botao => { botao.onclick = () => el.close(); });
+  el.querySelectorAll('[data-close]').forEach(botao => { botao.onclick = () => { if (!enviando) el.close(); }; });
+  el.oncancel = evento => { if (enviando) evento.preventDefault(); };
   if (aoEnviar) {
     const form = el.querySelector('form');
     form.onsubmit = async evento => {
       evento.preventDefault();
+      if (enviando || confirmado) return;
+      enviando = true;
       const botao = form.querySelector('[type=submit]');
       const erro = form.querySelector('.form-error');
       botao.disabled = true;
       erro.textContent = '';
-      try {
-        await aoEnviar(Object.fromEntries(new FormData(form)), form);
-        el.close();
-      } catch (e) { erro.textContent = e.message; }
-      finally { botao.disabled = false; }
+      let resultado;
+      try { resultado = await aoEnviar(Object.fromEntries(new FormData(form)), form); }
+      catch (e) {
+        erro.textContent = e.message;
+        botao.disabled = false;
+        enviando = false;
+        return;
+      }
+      confirmado = true;
+      enviando = false;
+      if (el.contains(form)) el.close();
+      await aoSalvar?.(resultado);
     };
   }
   if (!el.open) el.showModal();

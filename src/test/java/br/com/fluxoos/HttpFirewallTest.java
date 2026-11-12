@@ -3,6 +3,7 @@ package br.com.fluxoos;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -19,6 +20,47 @@ import static org.assertj.core.api.Assertions.assertThat;
 class HttpFirewallTest {
     @LocalServerPort int porta;
     private final HttpClient cliente = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+
+    protected String contexto() { return ""; }
+
+    @Test void consultasEAssinaturasExigemSessao() throws Exception {
+        for (String caminho : List.of("/api", "/api/usuarios", "/api/ordens", "/api/materiais",
+                "/api/movimentos", "/api/auth/me", "/api/ordens/100/assinatura")) {
+            assertThat(enviar(HttpRequest.newBuilder(uri(caminho)).GET().build()).statusCode())
+                    .as(caminho).isEqualTo(401);
+        }
+        for (String caminho : List.of("/api/ordens", "/api/auth/logout", "/api/auth/senha")) {
+            assertThat(enviar(HttpRequest.newBuilder(uri(caminho))
+                    .POST(HttpRequest.BodyPublishers.noBody()).build()).statusCode())
+                    .as(caminho).isEqualTo(401);
+        }
+    }
+
+    @Test void caminhosCodificadosNaoIgnoramAutenticacao() throws Exception {
+        for (String caminho : List.of("/%61pi/usuarios", "/api/%75suarios", "/%61pi/auth/me")) {
+            assertThat(enviar(HttpRequest.newBuilder(uri(caminho)).GET().build()).statusCode())
+                    .as(caminho).isEqualTo(401);
+        }
+    }
+
+    @Test void escritaExigeCsrfMesmoComSessaoValida() throws Exception {
+        HttpResponse<String> login = enviar(HttpRequest.newBuilder(uri("/api/auth/login"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"usuario\":\"admin\",\"senha\":\"Senha-firewall-testes-2026!\"}"))
+                .build());
+        assertThat(login.statusCode()).isEqualTo(200);
+        String cookie = login.headers().firstValue("Set-Cookie").orElseThrow().split(";", 2)[0];
+        String csrf = new ObjectMapper().readTree(login.body()).get("csrf").asText();
+        String corpo = "{\"solicitante\":\"Teste\",\"local\":\"Escola\",\"problema\":\"Rede\",\"prioridade\":\"MEDIA\"}";
+        assertThat(enviar(HttpRequest.newBuilder(uri("/api/ordens"))
+                .header("Cookie", cookie).header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(corpo)).build()).statusCode()).isEqualTo(403);
+        assertThat(enviar(HttpRequest.newBuilder(uri("/api/ordens"))
+                .header("Cookie", cookie).header("Content-Type", "application/json")
+                .header("X-CSRF-Token", csrf)
+                .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
+                .POST(HttpRequest.BodyPublishers.ofString(corpo)).build()).statusCode()).isEqualTo(201);
+    }
 
     @Test void rejeitaMatrixParametersLiteraisECodificadosNoServidorReal() throws Exception {
         for (String caminho : List.of("/api;revisao/usuarios", "/api%3Brevisao/usuarios",
@@ -43,7 +85,7 @@ class HttpFirewallTest {
         assertThat(enviar(HttpRequest.newBuilder(uri("/api;revisao/usuarios")).header("Cookie", cookie).GET().build()).statusCode()).isEqualTo(400);
     }
 
-    private URI uri(String caminho) { return URI.create("http://127.0.0.1:" + porta + caminho); }
+    private URI uri(String caminho) { return URI.create("http://127.0.0.1:" + porta + contexto() + caminho); }
     private HttpResponse<String> enviar(HttpRequest requisicao) throws Exception {
         return cliente.send(requisicao, HttpResponse.BodyHandlers.ofString());
     }

@@ -44,6 +44,7 @@ class FluxoOperacionalTest {
     @Autowired UsuarioRepository usuarios;
     @Autowired OrdemServicoService ordens;
     @Autowired EstoqueService estoque;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transacoes;
 
     @BeforeEach void preparar() {
         requisicoes.deleteAllInBatch();
@@ -87,25 +88,87 @@ class FluxoOperacionalTest {
         assertThat(finalizada.get("assinada").asBoolean()).isTrue();
         assertThat(finalizada.has("referenciaAssinatura")).isFalse();
         assertThat(finalizada.get("itens")).hasSize(1);
-        mvc.perform(get("/api/ordens/" + id + "/assinatura").cookie(tecnico.cookie)).andExpect(status().isOk()).andExpect(content().contentType("image/png"));
+        executar(get("/api/ordens/" + id + "/assinatura").cookie(tecnico.cookie)).andExpect(status().isOk()).andExpect(content().contentType("image/png"));
         assertThat(ordens.historico(id)).hasSize(6);
         assertThat(movimentos.findAll()).hasSize(2);
         enviar(post("/api/ordens/" + id + "/inicio"), null, tecnico, 409);
     }
 
     @Test void exigeSessaoCsrfEPermissoesNoServidor() throws Exception {
-        mvc.perform(get("/api/materiais")).andExpect(status().isUnauthorized());
-        mvc.perform(get("/")).andExpect(status().isOk()).andExpect(header().exists("Content-Security-Policy"));
+        executar(get("/api/materiais")).andExpect(status().isUnauthorized());
+        executar(get("/")).andExpect(status().isOk()).andExpect(header().exists("Content-Security-Policy"));
         Acesso tecnico = login("tecnico");
-        mvc.perform(post("/api/ordens").cookie(tecnico.cookie).contentType("application/json").content("{}"))
+        executar(post("/api/ordens").cookie(tecnico.cookie).contentType("application/json").content("{}"))
                 .andExpect(status().isForbidden());
         enviar(post("/api/ordens"), Map.of("solicitante", "Ana", "local", "Escola", "problema", "Rede", "prioridade", "ALTA"), tecnico, 403);
         enviar(post("/api/usuarios"), Map.of("login", "nova", "nome", "Nova Pessoa", "perfil", "CHEFE", "senha", SENHA), tecnico, 403);
-        mvc.perform(post("/api/auth/logout").cookie(tecnico.cookie).header("X-CSRF-Token", tecnico.csrf).header("Origin", "https://outro.local"))
+        executar(post("/api/auth/logout").cookie(tecnico.cookie).header("X-CSRF-Token", tecnico.csrf).header("Origin", "https://outro.local"))
                 .andExpect(status().isForbidden());
         long id = prepararOrdem();
         enviar(post("/api/ordens/" + id + "/inicio"), null, login("outro"), 403);
         enviar(get("/api/seguranca/eventos"), null, tecnico, 403);
+    }
+
+    @Test void aberturaHttpIdempotenteNaoDuplicaOrdemNemAuditoria() throws Exception {
+        Acesso admin = login("admin");
+        String chave = chave();
+        var corpo = Map.of("solicitante", "Ana", "local", "Escola", "problema", "Rede", "prioridade", "ALTA");
+        JsonNode primeira = enviar(post("/api/ordens").header("Idempotency-Key", chave), corpo, admin, 201);
+        JsonNode repetida = enviar(post("/api/ordens").header("Idempotency-Key", chave), corpo, admin, 201);
+        assertThat(repetida.get("id")).isEqualTo(primeira.get("id"));
+        assertThat(ordensRepository.count()).isEqualTo(1);
+        assertThat(ordens.historico(primeira.get("id").asLong())).hasSize(1);
+        enviar(post("/api/ordens").header("Idempotency-Key", chave),
+                Map.of("solicitante", "Ana", "local", "Outro local", "problema", "Rede", "prioridade", "ALTA"), admin, 409);
+        assertThat(ordensRepository.count()).isEqualTo(1);
+    }
+
+    @Test void aberturaConcorrenteComMesmaChaveRetornaMesmaOrdem() throws Exception {
+        String chave = chave();
+        Usuario admin = usuario(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch inicio = new CountDownLatch(1);
+        try {
+            List<Future<Long>> resultados = new ArrayList<>();
+            for (int i = 0; i < 2; i++) resultados.add(pool.submit(() -> {
+                inicio.await();
+                return ordens.abrirComChave(admin, "Ana", "Escola", "Rede", Prioridade.ALTA, chave).id();
+            }));
+            inicio.countDown();
+            assertThat(resultados.get(0).get(10, TimeUnit.SECONDS)).isEqualTo(resultados.get(1).get(10, TimeUnit.SECONDS));
+            assertThat(ordensRepository.count()).isEqualTo(1);
+        } finally { pool.shutdownNow(); }
+    }
+
+    @Test void rollbackDaAberturaPermiteRetentarComMesmaChave() {
+        Usuario admin = usuario(1);
+        String chave = chave();
+        assertThatThrownBy(() -> new org.springframework.transaction.support.TransactionTemplate(transacoes).executeWithoutResult(tx -> {
+            ordens.abrirComChave(admin, "Ana", "Escola", "Rede", Prioridade.ALTA, chave);
+            throw new IllegalStateException("Falha simulada antes do commit");
+        })).hasMessage("Falha simulada antes do commit");
+        assertThat(ordensRepository.count()).isZero();
+        long id = ordens.abrirComChave(admin, "Ana", "Escola", "Rede", Prioridade.ALTA, chave).id();
+        assertThat(ordensRepository.count()).isEqualTo(1);
+        assertThat(ordens.historico(id)).hasSize(1);
+    }
+
+    @Test void chaveDeAberturaPertenceAoAutor() {
+        inserirUsuario(5, "suporte", Perfil.SUPORTE_TI);
+        String chave = chave();
+        long primeira = ordens.abrirComChave(usuario(1), "Ana", "Escola", "Rede", Prioridade.ALTA, chave).id();
+        long segunda = ordens.abrirComChave(usuario(5), "Ana", "Escola", "Rede", Prioridade.ALTA, chave).id();
+        assertThat(primeira).isNotEqualTo(segunda);
+        assertThat(ordensRepository.count()).isEqualTo(2);
+    }
+
+    @Test void aberturaExigeChaveValidaNoHttp() throws Exception {
+        Acesso admin = login("admin");
+        String corpo = json.writeValueAsString(Map.of("solicitante", "Ana", "local", "Escola", "problema", "Rede", "prioridade", "ALTA"));
+        mvc.perform(post("/api/ordens").servletPath("/api/ordens").cookie(admin.cookie)
+                .header("X-CSRF-Token", admin.csrf).contentType("application/json").content(corpo)).andExpect(status().isBadRequest());
+        enviar(post("/api/ordens").header("Idempotency-Key", "curta"), json.readTree(corpo), admin, 400);
+        assertThat(ordensRepository.count()).isZero();
     }
 
     @Test void saldoInsuficienteNaoAlteraAgregados() {
@@ -203,10 +266,31 @@ class FluxoOperacionalTest {
         Acesso primeiro = login("tecnico");
         Acesso segundo = login("tecnico");
         enviar(post("/api/auth/senha"), Map.of("atual", SENHA, "nova", "Minha-nova-senha-longa-2026!"), primeiro, 200);
-        mvc.perform(get("/api/auth/me").cookie(segundo.cookie)).andExpect(status().isUnauthorized());
+        executar(get("/api/auth/me").cookie(segundo.cookie)).andExpect(status().isUnauthorized());
         Acesso outro = login("outro");
         enviar(patch("/api/usuarios/" + usuario(3).getId() + "/status"), Map.of("ativo", false), login("admin"), 200);
-        mvc.perform(get("/api/auth/me").cookie(outro.cookie)).andExpect(status().isUnauthorized());
+        executar(get("/api/auth/me").cookie(outro.cookie)).andExpect(status().isUnauthorized());
+    }
+
+    @Test void reativacaoExigeNovoLoginEmTodosOsDispositivos() throws Exception {
+        Acesso primeiro = login("tecnico");
+        Acesso segundo = login("tecnico");
+        Acesso outraConta = login("outro");
+        Acesso admin = login("admin");
+        String status = "/api/usuarios/" + usuario(2).getId() + "/status";
+        enviar(patch(status), Map.of("ativo", false), admin, 200);
+        enviar(get("/api/auth/me"), null, primeiro, 401);
+        enviar(post("/api/auth/login"), Map.of("usuario", "tecnico", "senha", SENHA), null, 401);
+        enviar(patch(status), Map.of("ativo", true), admin, 200);
+        enviar(get("/api/auth/me"), null, primeiro, 401);
+        // Este dispositivo não fez nenhuma requisição durante a desativação.
+        enviar(get("/api/auth/me"), null, segundo, 401);
+        enviar(post("/api/auth/logout"), null, segundo, 401);
+        enviar(get("/api/auth/me"), null, outraConta, 200);
+        enviar(get("/api/auth/me"), null, admin, 200);
+        Acesso novo = login("tecnico");
+        enviar(get("/api/auth/me"), null, novo, 200);
+        enviar(post("/api/auth/logout"), null, novo, 200);
     }
 
     @Test void validaEntradasENaoExibeDadosSecretos() throws Exception {
@@ -242,8 +326,17 @@ class FluxoOperacionalTest {
         return m;
     }
     private static String chave() { return UUID.randomUUID().toString(); }
+    private ResultActions executar(MockHttpServletRequestBuilder requisicao) throws Exception {
+        // MockMvc não preenche servletPath como o Tomcat no mapeamento padrão "/".
+        return mvc.perform(requisicao.with(req -> {
+            req.setServletPath(req.getRequestURI().substring(req.getContextPath().length()));
+            if (req.getMethod().equals("POST") && req.getServletPath().equals("/api/ordens")
+                    && req.getHeader("Idempotency-Key") == null) req.addHeader("Idempotency-Key", chave());
+            return req;
+        }));
+    }
     private Acesso login(String nome) throws Exception {
-        MvcResult resultado = mvc.perform(post("/api/auth/login").contentType("application/json")
+        MvcResult resultado = executar(post("/api/auth/login").contentType("application/json")
                 .content(json.writeValueAsString(Map.of("usuario", nome, "senha", SENHA)))).andExpect(status().isOk()).andReturn();
         String cabecalho = resultado.getResponse().getHeader("Set-Cookie");
         assertThat(cabecalho).contains("HttpOnly", "SameSite=Strict");
@@ -253,7 +346,7 @@ class FluxoOperacionalTest {
     private JsonNode enviar(MockHttpServletRequestBuilder requisicao, Object corpo, Acesso acesso, int statusEsperado) throws Exception {
         if (acesso != null) requisicao.cookie(acesso.cookie).header("X-CSRF-Token", acesso.csrf);
         if (corpo != null) requisicao.contentType("application/json").content(json.writeValueAsString(corpo));
-        String resposta = mvc.perform(requisicao).andExpect(status().is(statusEsperado)).andReturn().getResponse().getContentAsString();
+        String resposta = executar(requisicao).andExpect(status().is(statusEsperado)).andReturn().getResponse().getContentAsString();
         return resposta.isBlank() ? json.nullNode() : json.readTree(resposta);
     }
     private static String assinatura() throws Exception {

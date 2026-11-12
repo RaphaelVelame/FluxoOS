@@ -9,6 +9,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.Base64;
 import java.util.List;
+import java.util.UUID;
+import java.util.HexFormat;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 @Service
 @Transactional
@@ -45,10 +51,50 @@ public class OrdemServicoService {
     }
 
     public OrdemServico abrir(Usuario ator, String solicitante, String local, String problema, Prioridade prioridade) {
+        return registrarAbertura(ator, solicitante, local, problema, prioridade, UUID.randomUUID().toString());
+    }
+
+    public OrdemView abrirComChave(Usuario ator, String solicitante, String local, String problema, Prioridade prioridade, String chave) {
+        return OrdemView.de(registrarAbertura(ator, solicitante, local, problema, prioridade, chave));
+    }
+
+    private OrdemServico registrarAbertura(Usuario ator, String solicitante, String local, String problema, Prioridade prioridade, String chave) {
         exigirGestor(ator);
-        OrdemServico ordem = ordens.save(new OrdemServico(solicitante, local, problema, prioridade));
+        if (chave == null || !chave.matches("[a-zA-Z0-9-]{16,80}")) {
+            throw new IllegalArgumentException("Cabeçalho Idempotency-Key obrigatório (16 a 80 caracteres).");
+        }
+        // Serializa aberturas do mesmo autor, inclusive em instâncias distintas.
+        Usuario autor = usuarios.buscarParaAtualizar(ator.getId())
+                .orElseThrow(() -> new NaoEncontradoException("Usuário não encontrado."));
+        exigirGestor(autor);
+        String conteudo = resumoAbertura(solicitante, local, problema, prioridade);
+        var anterior = ordens.findByAutorAberturaIdAndChaveAbertura(autor.getId(), chave);
+        if (anterior.isPresent()) {
+            if (!conteudo.equals(anterior.get().getConteudoAbertura())) {
+                throw new IllegalStateException("Esta chave já foi utilizada em outra abertura de OS.");
+            }
+            return anterior.get();
+        }
+        OrdemServico nova = new OrdemServico(solicitante, local, problema, prioridade);
+        nova.identificarAbertura(autor.getId(), chave, conteudo);
+        OrdemServico ordem = ordens.save(nova);
         auditoria.registrar(ordem.getId(), ator.getId(), "ABERTURA", "Ordem de serviço aberta.");
         return ordem;
+    }
+
+    private static String resumoAbertura(String solicitante, String local, String problema, Prioridade prioridade) {
+        if (solicitante == null || local == null || problema == null || prioridade == null) {
+            throw new IllegalArgumentException("Dados da abertura obrigatórios.");
+        }
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            for (String parte : List.of(solicitante, local, problema, prioridade.name())) {
+                byte[] bytes = parte.getBytes(StandardCharsets.UTF_8);
+                digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
+                digest.update(bytes);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) { throw new IllegalStateException("SHA-256 indisponível", e); }
     }
 
     public void atribuir(Usuario ator, long id, long tecnicoId) {

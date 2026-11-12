@@ -22,11 +22,23 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '25'
           cache: maven
       - run: sh ./mvnw --batch-mode verify
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+      - run: npm ci
+        working-directory: tests/e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: tests/e2e
+      - name: Validar gravação e recuperação da interface
+        run: npm test
+        working-directory: tests/e2e
       - name: Validar fluxo operacional no PostgreSQL
-        run: sh ./mvnw --batch-mode -Dtest=FluxoOperacionalTest test
+        run: sh ./mvnw --batch-mode -Dtest=FluxoOperacionalTest,RevogacaoSessaoTest,MigracaoSessaoTest,LimitesLoginTest test
         env:
           TEST_DATABASE_URL: jdbc:postgresql://localhost:5432/fluxoos_test
           TEST_DATABASE_USER: fluxoos

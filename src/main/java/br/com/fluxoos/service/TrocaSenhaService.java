@@ -46,7 +46,8 @@ public class TrocaSenhaService {
         if (credenciais.substituirHashSenha(autor.getId(), antigo, novo) != 1) {
             throw new IllegalStateException("Credencial alterada concorrentemente");
         }
-        sessoes.revogarTodasDoUsuario(autor.getId());
+        // A atualização condicional também incrementa a versão de sessão da conta.
+        // A invalidação só se torna efetiva quando a transação é confirmada.
         eventos.registrarSeguranca(TipoEventoSeguranca.SENHA_ALTERADA,
                 "Senha alterada e sessões revogadas", autor.getId(), autor.getId(), clock.instant());
     }

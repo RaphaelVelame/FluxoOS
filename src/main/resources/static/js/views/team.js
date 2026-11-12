@@ -7,8 +7,8 @@ export function equipe(ctx) {
     el.onclick = () => {
       const u = ctx.estado.usuarios.find(u => u.id === Number(el.dataset.userStatus));
       modal(`${u.ativo ? 'Desativar' : 'Ativar'} conta`, `<p>${escape(u.nome)}</p><p class="muted">${u.ativo ? 'Esta pessoa perderá o acesso ao sistema. O histórico será preservado.' : 'Esta pessoa poderá acessar o sistema novamente.'}</p>`, { textoBotao: 'Confirmar', aoEnviar: async () => {
-        await api(`/usuarios/${u.id}/status`, { method: 'PATCH', body: { ativo: !u.ativo } }); await ctx.atualizar(); equipe(ctx); toast('Status da conta atualizado.');
-      } });
+        return api(`/usuarios/${u.id}/status`, { method: 'PATCH', body: { ativo: !u.ativo } });
+      }, aoSalvar: () => ctx.aposGravar('Status da conta atualizado.') });
     };
   });
   document.querySelector('#security-events')?.addEventListener('click', async () => {
@@ -21,8 +21,8 @@ export function equipe(ctx) {
 
 function novoUsuario(ctx) {
   modal('Adicionar pessoa à equipe', `${campo('Nome completo', 'nome', 'text', 'maxlength="160" autocomplete="name"')}${campo('Login', 'login', 'text', 'minlength="3" maxlength="80" pattern="[a-z0-9._-]+" autocomplete="off" placeholder="Ex.: maria.santos"')}<label>Perfil de acesso<select name="perfil">${Object.entries(perfis).map(([v, t]) => `<option value="${v}" ${v === 'TECNICO' ? 'selected' : ''}>${t}</option>`).join('')}</select></label>${campo('Senha inicial', 'senha', 'password', 'minlength="15" maxlength="1024" autocomplete="new-password"')}<p class="hint">Use pelo menos 15 caracteres. Compartilhe a senha por um canal privado e peça a troca no primeiro acesso.</p>`, { textoBotao: 'Criar conta', aoEnviar: async e => {
-    await api('/usuarios', { method: 'POST', body: e }); await ctx.atualizar(); equipe(ctx); toast('Conta criada.');
-  } });
+    return api('/usuarios', { method: 'POST', body: e });
+  }, aoSalvar: () => ctx.aposGravar('Conta criada.') });
 }
 
 export function conta(ctx) {

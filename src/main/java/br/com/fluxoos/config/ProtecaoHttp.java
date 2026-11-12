@@ -55,7 +55,9 @@ public class ProtecaoHttp extends OncePerRequestFilter {
         res.setHeader("X-Frame-Options", "DENY");
         res.setHeader("Referrer-Policy", "same-origin");
         res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
-        if (!req.getRequestURI().startsWith("/api/")) {
+        // O caminho do servlet exclui o contexto e acompanha a interpretação do servidor.
+        String path = req.getServletPath();
+        if (!(path.equals("/api") || path.startsWith("/api/"))) {
             chain.doFilter(req, res);
             return;
         }
@@ -73,7 +75,7 @@ public class ProtecaoHttp extends OncePerRequestFilter {
                 return;
             }
         }
-        if (req.getRequestURI().equals("/api/auth/login") && req.getMethod().equals("POST")) {
+        if (path.equals("/api/auth/login") && req.getMethod().equals("POST")) {
             chain.doFilter(req, res);
             return;
         }

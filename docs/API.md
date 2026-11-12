@@ -4,7 +4,7 @@ Base: `/api`. JSON UTF-8. Erros retornam `{"mensagem":"Descrição"}`. A interfa
 
 1. `POST /auth/login` com `{"usuario":"admin","senha":"sua-senha"}` retorna o usuário e `csrf`, e emite o cookie HttpOnly.
 2. Envie `X-CSRF-Token` nas operações POST, PUT e PATCH, inclusive logout.
-3. Envie também `Idempotency-Key` com UUID em consumo e movimentação manual.
+3. Envie também `Idempotency-Key` com UUID na abertura de OS, no consumo e na movimentação manual.
 
 | Método | Rota | Corpo / resultado |
 | --- | --- | --- |
@@ -34,3 +34,9 @@ Base: `/api`. JSON UTF-8. Erros retornam `{"mensagem":"Descrição"}`. A interfa
 Prioridade: `BAIXA`, `MEDIA`, `ALTA`. Perfil: `CHEFE`, `SUPORTE_TI`, `TECNICO`, `SOLICITANTE`. Movimentos manuais: `ENTRADA`, `DEVOLUCAO`, `AJUSTE`. Ajuste recebe a **diferença**, por exemplo `-3`, não o saldo final. `SAIDA` é gerada apenas no consumo em OS.
 
 Status: 200 sucesso, 201 criação, 400 entrada inválida, 401 sem sessão/login recusado, 403 sem permissão/CSRF, 404 ausente, 409 conflito de estado/duplicidade, 413 requisição grande, 500 erro interno sem detalhes sensíveis. Todas as permissões estão na tabela do README.
+
+Desativar uma conta invalida todas as suas sessões anteriores. Reativar permite novo login e mantém os cookies antigos inválidos (401), inclusive quando um dispositivo não fez requisições durante a desativação. A invalidação acompanha o commit da alteração; rollback não encerra sessões de uma conta cuja alteração foi revertida.
+
+`POST /ordens` exige `Idempotency-Key` de 16 a 80 letras, números ou hífens. Repetir a mesma chave e os mesmos dados com o mesmo autor retorna a mesma OS (201), sem repetir a abertura ou sua auditoria. O DTO representa o estado atual da ordem. Reutilizar a chave com outros dados retorna 409. Ausência ou formato inválido retorna 400. Uma nova abertura deve usar outra chave. Chaves de abertura são independentes das chaves de movimentação de estoque.
+
+O login admite até 20 sessões ativas no total por instância. Credenciais válidas com capacidade esgotada retornam 429; as sessões existentes continuam válidas. Logout libera a vaga imediatamente, e sessões expiradas ou de contas invalidadas são descartadas. Cinco falhas por usuário em uma janela de 15 minutos bloqueiam novas autenticações por cinco minutos; o IP tem um controle adicional de 30 falhas na mesma janela e bloqueio de cinco minutos. Durante bloqueio, a API mantém 401 e a mensagem uniforme de autenticação recusada, sem revelar existência da conta. Tentativas recusadas durante o bloqueio não reiniciam seu prazo. Sessões já abertas não são encerradas por erros de senha em novos logins.

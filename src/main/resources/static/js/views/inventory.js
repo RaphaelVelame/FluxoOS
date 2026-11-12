@@ -1,5 +1,5 @@
 import { api, chaveOperacao } from '../api.js';
-import { icon, escape, numero, badge, vazio, modal, campo, data, movimentos, toast } from '../components.js';
+import { icon, escape, numero, badge, vazio, modal, campo, data, movimentos } from '../components.js';
 
 export function estoque(ctx) {
   const materiais = ctx.estado.materiais;
@@ -23,8 +23,8 @@ export function estoque(ctx) {
 
 function novoMaterial(ctx) {
   modal('Cadastrar material', `<p class="form-intro">O material começa com saldo zero. Registre uma entrada para repor o estoque.</p>${campo('Código único', 'codigo', 'text', 'maxlength="60" placeholder="Ex.: MAT-004"')}${campo('Nome do material', 'nome', 'text', 'maxlength="160"')}<div class="form-grid">${campo('Unidade', 'unidade', 'text', 'maxlength="20" placeholder="un, m, kg…"')}${campo('Quantidade mínima', 'minimo', 'number', 'min="0" step="1" value="0"')}</div>`, { textoBotao: 'Cadastrar material', aoEnviar: async e => {
-    await api('/materiais', { method: 'POST', body: { ...e, minimo: Number(e.minimo) } }); await ctx.atualizar(); estoque(ctx); toast('Material cadastrado.');
-  } });
+    return api('/materiais', { method: 'POST', body: { ...e, minimo: Number(e.minimo) } });
+  }, aoSalvar: () => ctx.aposGravar('Material cadastrado.') });
 }
 
 function movimentar(ctx, id) {
@@ -39,8 +39,9 @@ function movimentar(ctx, id) {
         el.querySelector('#variation-hint').textContent = ajuste ? 'Informe a diferença: +5 adiciona cinco; -5 retira cinco. Não informe o saldo final.' : 'Informe a quantidade que será adicionada ao estoque.';
       };
     }, aoEnviar: async e => {
-      await api(`/materiais/${id}/movimentos`, { method: 'POST', key, body: { ...e, variacao: Number(e.variacao) } }); await ctx.atualizar(); estoque(ctx); toast('Estoque atualizado.');
+      return api(`/materiais/${id}/movimentos`, { method: 'POST', key, body: { ...e, variacao: Number(e.variacao) } });
     },
+    aoSalvar: () => ctx.aposGravar('Estoque atualizado.'),
   });
 }
 
@@ -53,6 +54,6 @@ function historicoMaterial(ctx, id) {
 function statusMaterial(ctx, id) {
   const material = ctx.estado.materiais.find(m => m.id === id);
   modal(`${material.ativo ? 'Desativar' : 'Ativar'} material`, `<p>${escape(material.nome)}</p><p class="muted">${material.ativo ? 'O material continuará no histórico e ficará indisponível para novas movimentações.' : 'O material ficará disponível para novas movimentações.'}</p>`, { textoBotao: 'Confirmar', aoEnviar: async () => {
-    await api(`/materiais/${id}/status`, { method: 'PATCH', body: { ativo: !material.ativo } }); await ctx.atualizar(); estoque(ctx); toast('Status do material atualizado.');
-  } });
+    return api(`/materiais/${id}/status`, { method: 'PATCH', body: { ativo: !material.ativo } });
+  }, aoSalvar: () => ctx.aposGravar('Status do material atualizado.') });
 }

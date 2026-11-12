@@ -1,12 +1,12 @@
 # FluxoOS
 
-Aplicação web de ordens de serviço e estoque, com Java 17, Spring Boot, Spring Data JPA/Hibernate e interface **mobile first** em HTML, CSS e JavaScript.
+Aplicação web de ordens de serviço e estoque, com Java 25, Spring Boot, Spring Data JPA/Hibernate e interface **mobile first** em HTML, CSS e JavaScript.
 
 O backend segue uma estrutura simples: **controller → service → repository**, com entidades JPA, DTOs, configuração, enums e segurança em pacotes separados. Este README reúne a documentação atual do projeto.
 
 ## Executar no Windows
 
-Requer **JDK 17 ou superior** e conexão à internet na primeira compilação. O Maven Wrapper baixa o Maven e as dependências oficiais; não é necessário instalar Maven ou Node. A integração local usa PostgreSQL quando o perfil `postgres` está configurado no `.env`.
+Requer **JDK 25 ou superior** e conexão à internet na primeira compilação. O Maven Wrapper baixa o Maven e as dependências oficiais; não é necessário instalar Maven ou Node. A integração local usa PostgreSQL quando o perfil `postgres` está configurado no `.env`.
 
 ```powershell
 .\scripts\executar.ps1
@@ -45,6 +45,8 @@ Após a criação da conta, remova a variável de senha do ambiente. Para mudar 
 - Layout para celular com navegação inferior, sidebar em telas maiores, formulários acessíveis, estados vazios e mensagens de erro.
 
 ## Permissões implementadas
+
+Por padrão, a aplicação admite 20 sessões ativas no total por instância. Cinco erros por usuário em 15 minutos bloqueiam novos logins por cinco minutos; há proteção adicional por IP e descarte automático dos registros antigos. A 21ª sessão é recusada sem encerrar as existentes. Consulte [configuração e operação](docs/OPERACAO.md) e [testes da correção](docs/CORRECAO_LIMITES_2026-11-11.md).
 
 | Operação | Chefia | Suporte TI | Técnico | Solicitante |
 | --- | :---: | :---: | :---: | :---: |
@@ -129,7 +131,9 @@ java -jar target/fluxoos-1.0.0-SNAPSHOT.jar
 
 No Linux/macOS, use `sh ./scripts/testar.sh` e `sh ./mvnw verify`. A suíte padrão usa H2 em memória e não altera a base local. Cobre fluxo HTTP completo, autenticação/CSRF, permissões, transações JPA com rollback real, concorrência de consumo, idempotência, assinatura, carga demonstrativa e separação dos controllers.
 
-`testar-postgres.ps1` carrega a conexão do `.env`, cria um esquema temporário com nome aleatório, aplica as migrações e executa os mesmos testes operacionais no PostgreSQL real. O esquema é removido ao final, inclusive quando os testes falham; as tabelas do esquema `public` permanecem preservadas. A URL de conexão para esse script deve estar sem parâmetros. Uma interrupção forçada do processo pode exigir a remoção manual do esquema `fluxoos_test_...` deixado para trás. O GitHub Actions executa `verify` com Java 17 e repete os testes operacionais em um PostgreSQL 18 descartável.
+Os [testes de interface](tests/e2e/README.md) verificam gravação confirmada seguida de falha de consulta, perda de resposta e recuperação sem reenvio. Usam Node 24 e Playwright somente para testes, iniciando um servidor próprio com H2 em memória. O CI também executa essa suíte. A abertura de OS pela API agora exige `Idempotency-Key`, conforme o [contrato HTTP](docs/API.md).
+
+`testar-postgres.ps1` carrega a conexão do `.env`, cria um esquema temporário com nome aleatório, aplica as migrações e executa os mesmos testes operacionais no PostgreSQL real. O esquema é removido ao final, inclusive quando os testes falham; as tabelas do esquema `public` permanecem preservadas. A URL de conexão para esse script deve estar sem parâmetros. Uma interrupção forçada do processo pode exigir a remoção manual do esquema `fluxoos_test_...` deixado para trás. O GitHub Actions executa `verify` com Java 25 e repete os testes operacionais em um PostgreSQL 18 descartável.
 
 Consulte [arquitetura](docs/ARQUITETURA.md), [API](docs/API.md) e [operação](docs/OPERACAO.md).
 

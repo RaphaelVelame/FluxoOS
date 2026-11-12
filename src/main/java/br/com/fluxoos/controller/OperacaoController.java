@@ -41,8 +41,8 @@ public class OperacaoController {
     }
 
     @PostMapping("/ordens") @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
-    public OrdemView abrir(@Valid @RequestBody NovaOrdem e, HttpServletRequest req) {
-        return OrdemView.de(ordens.abrir(ProtecaoHttp.usuario(req), e.solicitante(), e.local(), e.problema(), e.prioridade()));
+    public OrdemView abrir(@Valid @RequestBody NovaOrdem e, @RequestHeader("Idempotency-Key") String chave, HttpServletRequest req) {
+        return ordens.abrirComChave(ProtecaoHttp.usuario(req), e.solicitante(), e.local(), e.problema(), e.prioridade(), chave);
     }
     @PostMapping("/ordens/{id}/atribuicao") public void atribuir(@PathVariable long id, @Valid @RequestBody Atribuicao e, HttpServletRequest req) {
         ordens.atribuir(ProtecaoHttp.usuario(req), id, e.tecnicoId());

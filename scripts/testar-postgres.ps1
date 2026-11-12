@@ -18,7 +18,7 @@ try {
     $env:TEST_DATABASE_USER = $conexao.UserName
     $env:TEST_DATABASE_PASSWORD = $conexao.Password
     Write-Host "Validando migracoes e fluxo operacional no esquema temporario $schema."
-    & .\mvnw.cmd '-Dtest=FluxoOperacionalTest' test
+    & .\mvnw.cmd '-Dtest=FluxoOperacionalTest,RevogacaoSessaoTest,MigracaoSessaoTest,LimitesLoginTest' test
     $resultado = $LASTEXITCODE
 } finally {
     foreach ($nome in $nomes) { [Environment]::SetEnvironmentVariable($nome, $anteriores[$nome], 'Process') }

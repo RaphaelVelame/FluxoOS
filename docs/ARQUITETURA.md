@@ -37,9 +37,29 @@ O sistema serve UI e API na mesma origem. Requisições mutáveis exigem sessão
 
 As assinaturas PNG são validadas por formato, dimensões e presença de traços, armazenadas na mesma transação da conclusão e servidas apenas em rota autenticada. A listagem retorna um indicador de assinatura. Banco, backups e acesso de consulta precisam ser tratados segundo a política da organização.
 
+### Invalidação de sessões por conta
+
+A migração V3 acrescenta `usuarios.versao_sessao`, inicialmente zero para as contas existentes. Cada sessão guarda a versão observada durante a autenticação. Desativar incrementa essa versão na mesma transação que muda o status; reativar mantém a versão. A troca de senha também a incrementa na atualização condicional do hash. `SessaoService` compara a versão em cada validação, além de verificar conta ativa, expiração e CSRF.
+
+Assim, sessões anteriores continuam inválidas após a reativação, inclusive se a emissão terminar com um estado da conta carregado antes da desativação. Rollback preserva a versão anterior e suas sessões. Não há necessidade de percorrer os mapas de todas as instâncias para invalidar a conta. As sessões e o limitador continuam em memória por JVM, com os limites e a manutenção descritos abaixo. Consulte [pesquisa e testes da correção](CORRECAO_SESSOES_2026-11-11.md).
+
+### Capacidade e descarte da autenticação
+
+O armazenamento admite no máximo 20 sessões por JVM, com verificação de capacidade e inclusão sincronizadas. Expiradas e revogadas são removidas durante consultas/admissão, e logout remove a sessão imediatamente. Antes de emitir um token, `SessaoService` também descarta sessões cujo usuário foi removido, desativado ou teve sua versão alterada. A consulta resumida dos usuários usa uma transação independente de leitura para observar somente commits, evitando descarte indevido durante rollback. O mapa não fica bloqueado durante o acesso ao banco.
+
+O limitador registra apenas falhas, limita os mapas de nomes e IPs e não aloca entradas em consultas de identidades novas. Descarte respeita a janela de falhas e todo o prazo de bloqueio. Na saturação, não substitui bloqueios ativos por identidades novas. A verificação e o registro de falhas continuam coordenados pelo autenticador sincronizado. `ManutencaoSeguranca` executa a limpeza periódica, por padrão a cada 60 segundos, mesmo sem tráfego. Consulte [política, pesquisa e testes](CORRECAO_LIMITES_2026-11-11.md).
+
 ## Interface
 
 HTML semântico, CSS mobile first e módulos JavaScript nativos. A navegação inferior é a base para celular; a sidebar aparece a partir de 900px. Formulários têm rótulos, foco visível, feedback e botões desabilitados durante envio. Dados de usuário são escapados antes de montar HTML. Scripts e estilos são locais, sem CDN ou fontes externas.
+
+### Confirmação de gravação e recuperação da tela
+
+Os modais executam somente a gravação em `aoEnviar`. Depois do sucesso, bloqueiam novo envio, fecham e executam `aoSalvar`; esse retorno confirmado não é tratado como falha de gravação quando as consultas posteriores falham. `aposGravar` mantém uma confirmação pendente e mostra uma página de recuperação, sem ações baseadas em dados antigos. O botão Atualizar dados executa somente consultas e restaura a rota atual. Início e relato usam a mesma separação. Se a sessão expirar nesse intervalo, a tela de login preserva a mensagem de confirmação.
+
+A migração V4 acrescenta autor, chave e hash da abertura em `ordens`, com unicidade por autor/chave. O servidor compara um hash dos campos da solicitação e serializa aberturas do mesmo autor com lock transacional no usuário. Repetições retornam o DTO da mesma OS dentro da transação; dados diferentes com a mesma chave são recusados. Conta, ordem e auditoria mantêm as transações existentes. Ordens anteriores à migração continuam válidas, sem chave de abertura.
+
+Os testes de navegador em `tests/e2e` usam Playwright e Node somente como ferramentas de desenvolvimento. A interface continua em JavaScript nativo, sem framework adicional. Consulte [pesquisa e validação da correção](CORRECAO_GRAVACAO_2026-11-11.md).
 
 ## Evolução recomendada
 

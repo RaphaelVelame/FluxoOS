@@ -43,6 +43,10 @@ public abstract class ControleTentativas {
     public final synchronized Instant getUltimaFalha() { return ultimaFalha; }
     public final synchronized Instant getBloqueadoAte() { return bloqueadoAte; }
 
+    public final synchronized boolean podeDescartar(Instant agora, PoliticaBloqueio politica) {
+        return !estaBloqueado(agora, politica) && instantesFalha.isEmpty();
+    }
+
     private void limparJanela(Instant agora, PoliticaBloqueio politica) {
         if (bloqueadoAte != null && !agora.isBefore(bloqueadoAte)) {
             // Terminado o bloqueio, começa uma nova janela.

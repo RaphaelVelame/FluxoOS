@@ -18,8 +18,9 @@ export async function api(caminho, { method = 'GET', body, key } = {}) {
   const dados = tipo.includes('application/json') ? await resposta.json() : null;
   if (!resposta.ok) {
     if (resposta.status === 401 && caminho !== '/auth/login') {
+      const tinhaSessao = !!csrf;
       salvarCsrf(null);
-      window.dispatchEvent(new Event('sessao-expirada'));
+      if (tinhaSessao) window.dispatchEvent(new Event('sessao-expirada'));
     }
     throw new Error(dados?.mensagem || 'Não foi possível conectar ao servidor. Tente novamente.');
   }

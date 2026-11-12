@@ -12,6 +12,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /** Caso de uso: emite, valida, protege operações mutáveis e revoga sessões. */
 public final class SessaoService {
@@ -40,11 +42,12 @@ public final class SessaoService {
     /** Sem public: somente autenticadores do mesmo pacote emitem sessões. */
     TokensEmitidos criarParaUsuarioAutenticado(Usuario usuario) {
         if (usuario == null || !usuario.isAtivo()) throw new SecurityException("Usuário inativo");
+        limparSessoesInvalidas();
         Instant agora = clock.instant();
         String token = TokenSeguro.novoToken();
         String csrf = TokenSeguro.novoToken();
         Sessao sessao = new Sessao(TokenSeguro.hash(token), TokenSeguro.hash(csrf),
-                usuario.getId(), agora, tempoAbsoluto, tempoInatividade);
+                usuario.getId(), usuario.getVersaoSessao(), agora, tempoAbsoluto, tempoInatividade);
         sessoes.salvar(sessao);
         return new TokensEmitidos(token, csrf, sessao.getExpiraEm());
     }
@@ -55,6 +58,7 @@ public final class SessaoService {
         Instant agora = clock.instant();
         Usuario usuario = usuarios.findById(sessao.getUsuarioId())
                 .filter(Usuario::isAtivo)
+                .filter(u -> u.getVersaoSessao() == sessao.getVersaoUsuario())
                 .orElseThrow(() -> new SecurityException("Sessão inválida"));
         if (!sessao.acessar(agora)) throw new SecurityException("Sessão inválida");
         return usuario;
@@ -80,16 +84,23 @@ public final class SessaoService {
         Instant agora = clock.instant();
         if (!sessao.isRevogada()) {
             sessao.revogar(agora);
+            sessoes.remover(sessao);
             eventos.registrarSeguranca(TipoEventoSeguranca.SESSAO_REVOGADA, "Sessão encerrada",
                     sessao.getUsuarioId(), null, agora);
         }
     }
 
-    /** Após troca de senha, encerra todas as sessões, mesmo em outros dispositivos. */
-    void revogarTodasDoUsuario(long usuarioId) {
-        Instant agora = clock.instant();
-        for (Sessao sessao : sessoes.buscarPorUsuario(usuarioId)) {
-            sessao.revogar(agora);
+    public void limparSessoesInvalidas() {
+        var existentes = sessoes.listar();
+        if (existentes.isEmpty()) return;
+        var ids = existentes.stream().map(Sessao::getUsuarioId).distinct().toList();
+        var estados = usuarios.buscarEstadosDeAcesso(ids).stream()
+                .collect(Collectors.toMap(UsuarioRepository.EstadoAcesso::getId, Function.identity()));
+        for (Sessao sessao : existentes) {
+            var estado = estados.get(sessao.getUsuarioId());
+            if (estado == null || !estado.getAtivo() || estado.getVersaoSessao() != sessao.getVersaoUsuario()) {
+                sessoes.remover(sessao);
+            }
         }
     }
 

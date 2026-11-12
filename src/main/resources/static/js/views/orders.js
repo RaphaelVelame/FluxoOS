@@ -3,17 +3,15 @@ import { icon, escape, badge, situacoes, prioridades, vazio, modal, campo, data,
 import { prepararAssinatura } from '../signature.js';
 
 export function novaOrdem(ctx) {
+  const key = chaveOperacao();
   modal('Nova ordem de serviço', `<p class="form-intro">Conte o que precisa ser resolvido. A equipe pode ser designada em seguida.</p>
     ${campo('Solicitante', 'solicitante', 'text', 'maxlength="160" autocomplete="name"')}
     ${campo('Local do atendimento', 'local', 'text', 'maxlength="240" placeholder="Unidade, setor e sala"')}
     <label>Problema relatado<textarea name="problema" required maxlength="4000" rows="4" placeholder="Descreva a necessidade do atendimento"></textarea></label>
     <label>Prioridade<select name="prioridade"><option value="MEDIA">Média</option><option value="ALTA">Alta</option><option value="BAIXA">Baixa</option></select></label>`, {
-    textoBotao: 'Criar ordem de serviço', aoEnviar: async valores => {
-      const ordem = await api('/ordens', { method: 'POST', body: valores });
-      await ctx.atualizar();
-      location.hash = `ordens/${ordem.id}`;
-      toast('Ordem de serviço criada.');
-    },
+    textoBotao: 'Criar ordem de serviço',
+    aoEnviar: valores => api('/ordens', { method: 'POST', body: valores, key }),
+    aoSalvar: ordem => ctx.aposGravar(`Ordem de serviço #${ordem.id} criada.`, `ordens/${ordem.id}`),
   });
 }
 
@@ -44,31 +42,37 @@ export async function detalheOrdem(ctx, id) {
     <section class="panel detail-panel"><div class="section-header"><div><h3>Materiais utilizados</h3><p>Consumo vinculado à baixa de estoque</p></div>${podeAtender && emAndamento ? `<button id="consume" class="button secondary small">${icon('plus')} Material</button>` : ''}</div>${ordem.itens.length ? `<div class="item-list">${ordem.itens.map(i => `<div class="line-item"><span>${escape(i.nome)}</span><strong>${i.quantidade} ${escape(i.unidade)}</strong></div>`).join('')}</div>` : '<p class="muted">Nenhum material utilizado.</p>'}</section>
     ${finalizada ? `<section class="panel detail-panel"><h3>Atendimento assinado</h3><p>Responsável: <strong>${escape(ordem.responsavel)}</strong></p><p class="muted">${data(ordem.assinadoEm)}</p><img class="saved-signature" src="/api/ordens/${id}/assinatura" alt="Assinatura de ${escape(ordem.responsavel)}"></section>` : podeAtender && emAndamento ? `<section class="completion-callout"><div>${icon('check')}<h3>Pronto para concluir?</h3><p>Salve o relato e solicite a assinatura do responsável no local.</p></div><button id="complete" class="button">Concluir com assinatura</button></section>` : ''}</div>
     <aside class="panel detail-panel timeline"><h3>Histórico da ordem</h3>${historico.length ? historico.map(h => `<div class="timeline-entry"><span class="timeline-dot"></span><strong>${escape(h.tipo.replaceAll('_', ' '))}</strong><p>${escape(h.detalhes)}</p><small>${data(h.criadoEm)} · ${escape(ctx.nomeUsuario(h.usuarioId))}</small></div>`).join('') : '<p class="muted">Nenhum evento registrado.</p>'}</aside></div>`, { titulo: `Ordem de serviço #${id}`, subtitulo: 'Detalhes, materiais e histórico do atendimento' });
-  const recarregar = async mensagem => { await ctx.atualizar(); await detalheOrdem(ctx, id); toast(mensagem); };
   document.querySelector('#assign')?.addEventListener('click', () => {
     const tecnicos = ctx.estado.usuarios.filter(u => u.ativo && u.perfil === 'TECNICO' && u.id !== ordem.tecnicoId);
     if (!tecnicos.length) { toast('Cadastre um técnico ativo ou escolha uma OS com outro responsável.', true); return; }
-    modal('Designar técnico', `<label>Técnico responsável<select name="tecnicoId" required>${tecnicos.map(u => `<option value="${u.id}">${escape(u.nome)}</option>`).join('')}</select></label><p class="hint">A atribuição será registrada no histórico da ordem.</p>`, { aoEnviar: async e => {
-      await api(`/ordens/${id}/atribuicao`, { method: 'POST', body: { tecnicoId: Number(e.tecnicoId) } }); await recarregar('Técnico designado.');
-    } });
+    modal('Designar técnico', `<label>Técnico responsável<select name="tecnicoId" required>${tecnicos.map(u => `<option value="${u.id}">${escape(u.nome)}</option>`).join('')}</select></label><p class="hint">A atribuição será registrada no histórico da ordem.</p>`, {
+      aoEnviar: e => api(`/ordens/${id}/atribuicao`, { method: 'POST', body: { tecnicoId: Number(e.tecnicoId) } }),
+      aoSalvar: () => ctx.aposGravar('Técnico designado.'),
+    });
   });
   document.querySelector('#start')?.addEventListener('click', async e => {
-    e.currentTarget.disabled = true;
-    try { await api(`/ordens/${id}/inicio`, { method: 'POST' }); await recarregar('Atendimento iniciado.'); }
-    catch (erro) { toast(erro.message, true); e.target.disabled = false; }
+    const botao = e.currentTarget;
+    if (botao.disabled) return;
+    botao.disabled = true;
+    try { await api(`/ordens/${id}/inicio`, { method: 'POST' }); }
+    catch (erro) { toast(erro.message, true); botao.disabled = false; return; }
+    await ctx.aposGravar('Atendimento iniciado.');
   });
   document.querySelector('#report-form')?.addEventListener('submit', async e => {
-    e.preventDefault(); const botao = e.currentTarget.querySelector('button'); botao.disabled = true;
-    try { await api(`/ordens/${id}/relato`, { method: 'PUT', body: { relato: document.querySelector('#report').value } }); await recarregar('Relato salvo.'); }
-    catch (erro) { toast(erro.message, true); botao.disabled = false; }
+    e.preventDefault(); const botao = e.currentTarget.querySelector('button');
+    if (botao.disabled) return;
+    botao.disabled = true;
+    try { await api(`/ordens/${id}/relato`, { method: 'PUT', body: { relato: document.querySelector('#report').value } }); }
+    catch (erro) { toast(erro.message, true); botao.disabled = false; return; }
+    await ctx.aposGravar('Relato salvo.');
   });
   document.querySelector('#consume')?.addEventListener('click', () => {
     const materiais = ctx.estado.materiais.filter(m => m.ativo && m.quantidade > 0 && !ordem.itens.some(i => i.materialId === m.id));
     if (!materiais.length) { toast('Não há materiais disponíveis para adicionar.', true); return; }
     const key = chaveOperacao();
     modal('Registrar material utilizado', `<p class="form-intro">O saldo será baixado assim que você confirmar o consumo.</p><label>Material<select name="materialId" required>${materiais.map(m => `<option value="${m.id}">${escape(m.nome)} · ${m.quantidade} ${escape(m.unidade)} disponíveis</option>`).join('')}</select></label>${campo('Quantidade utilizada', 'quantidade', 'number', 'min="1" step="1"')}${campo('Observação', 'observacao', 'text', 'maxlength="500" placeholder="Onde o material foi utilizado?"')}`, { textoBotao: 'Confirmar consumo', aoEnviar: async e => {
-      await api(`/ordens/${id}/materiais`, { method: 'POST', key, body: { ...e, materialId: Number(e.materialId), quantidade: Number(e.quantidade) } }); await recarregar('Material registrado e estoque atualizado.');
-    } });
+      return api(`/ordens/${id}/materiais`, { method: 'POST', key, body: { ...e, materialId: Number(e.materialId), quantidade: Number(e.quantidade) } });
+    }, aoSalvar: () => ctx.aposGravar('Material registrado e estoque atualizado.') });
   });
   document.querySelector('#complete')?.addEventListener('click', () => {
     const relatoAtual = document.querySelector('#report')?.value;
@@ -76,7 +80,8 @@ export async function detalheOrdem(ctx, id) {
     let assinatura;
     modal('Concluir atendimento', `${campo('Nome do responsável presente', 'responsavel', 'text', 'maxlength="160" autocomplete="name"')}<div class="signature-label"><span>Assinatura do responsável</span><button id="clear-signature" class="text-button" type="button">Limpar</button></div><canvas id="signature" aria-label="Área para desenhar a assinatura com o dedo, caneta ou mouse"></canvas><p class="hint">Assine com o dedo, caneta ou mouse. A assinatura e a data ficarão vinculadas a esta OS.</p>`, {
       textoBotao: 'Assinar e concluir', aoAbrir: el => { assinatura = prepararAssinatura(el.querySelector('canvas')); el.querySelector('#clear-signature').onclick = () => assinatura.limpar(); },
-      aoEnviar: async e => { await api(`/ordens/${id}/conclusao`, { method: 'POST', body: { responsavel: e.responsavel, assinatura: assinatura.imagem() } }); await recarregar('Atendimento concluído com assinatura.'); },
+      aoEnviar: e => api(`/ordens/${id}/conclusao`, { method: 'POST', body: { responsavel: e.responsavel, assinatura: assinatura.imagem() } }),
+      aoSalvar: () => ctx.aposGravar('Atendimento concluído com assinatura.'),
     });
   });
 }

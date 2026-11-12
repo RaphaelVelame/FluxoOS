@@ -2,9 +2,19 @@ param([switch]$Demo, [switch]$H2)
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 . (Join-Path $PSScriptRoot 'ambiente.ps1')
-if (-not (Get-Command java -ErrorAction SilentlyContinue)) { throw 'Instale o JDK 17 ou superior e reabra o terminal.' }
+$java = Get-Command java -ErrorAction SilentlyContinue
+if (-not $java) { throw 'Instale o JDK 25 ou superior e reabra o terminal.' }
+$javaVersion = (& $java.Source -version 2>&1 | Out-String)
+if ($LASTEXITCODE -ne 0 -or $javaVersion -notmatch 'version "(\d+)(?:\.(\d+))?') {
+    throw 'Nao foi possivel identificar a versao do Java. Instale o JDK 25 ou superior.'
+}
+$javaMajor = [int]$Matches[1]
+if ($javaMajor -eq 1) { $javaMajor = [int]$Matches[2] }
+if ($javaMajor -lt 25) { throw "JDK 25 ou superior necessario; encontrado Java $javaMajor." }
 $nomes = @('SPRING_PROFILES_ACTIVE', 'DATABASE_URL', 'DATABASE_USER', 'DATABASE_PASSWORD',
-    'COOKIE_SECURE', 'PORT', 'SERVER_ADDRESS', 'BOOTSTRAP_PASSWORD', 'DEMO_DATA')
+    'COOKIE_SECURE', 'PORT', 'SERVER_ADDRESS', 'BOOTSTRAP_PASSWORD', 'DEMO_DATA',
+    'MAX_SESSOES', 'LOGIN_MAX_ERROS', 'LOGIN_MAX_ERROS_IP', 'LOGIN_JANELA_MINUTOS',
+    'LOGIN_BLOQUEIO_MINUTOS', 'LOGIN_MAX_IDENTIFICADORES', 'SEGURANCA_LIMPEZA_MS')
 $anteriores = @{}
 foreach ($nome in $nomes) { $anteriores[$nome] = [Environment]::GetEnvironmentVariable($nome, 'Process') }
 try {

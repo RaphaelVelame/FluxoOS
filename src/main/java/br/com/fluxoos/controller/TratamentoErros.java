@@ -2,6 +2,7 @@ package br.com.fluxoos.controller;
 
 import br.com.fluxoos.service.NaoEncontradoException;
 import br.com.fluxoos.service.AutenticacaoNegadaException;
+import br.com.fluxoos.service.LimiteSessoesException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.*;
@@ -15,6 +16,7 @@ import java.util.Map;
 @RestControllerAdvice
 public class TratamentoErros {
     private static final Logger LOG = LoggerFactory.getLogger(TratamentoErros.class);
+    @ExceptionHandler(LimiteSessoesException.class) ResponseEntity<?> capacidade(LimiteSessoesException e) { return erro(429, e.getMessage()); }
     @ExceptionHandler(NaoEncontradoException.class) ResponseEntity<?> ausente(RuntimeException e) { return erro(404, e.getMessage()); }
     @ExceptionHandler(AutenticacaoNegadaException.class) ResponseEntity<?> login(RuntimeException e) { return erro(401, e.getMessage()); }
     @ExceptionHandler(SecurityException.class) ResponseEntity<?> proibido(RuntimeException e) { return erro(403, e.getMessage()); }

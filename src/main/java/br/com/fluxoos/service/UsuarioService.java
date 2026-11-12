@@ -40,7 +40,7 @@ public class UsuarioService {
     public void alterarStatus(Usuario ator, long id, boolean ativo) {
         exigirChefia(ator);
         if (id == ator.getId()) throw new IllegalArgumentException("Não é permitido alterar o status da própria conta.");
-        Usuario usuario = usuarios.findById(id).orElseThrow(() -> new NaoEncontradoException("Usuário não encontrado."));
+        Usuario usuario = usuarios.buscarParaAtualizar(id).orElseThrow(() -> new NaoEncontradoException("Usuário não encontrado."));
         if (ativo) usuario.ativar(); else usuario.desativar();
         auditoria.registrar(null, ator.getId(), "STATUS_USUARIO", "Conta " + id + (ativo ? " ativada." : " desativada."));
     }

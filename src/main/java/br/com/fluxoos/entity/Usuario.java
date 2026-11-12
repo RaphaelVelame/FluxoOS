@@ -22,6 +22,9 @@ public class Usuario {
     @Column(nullable = false)
     private boolean ativo;
     @JsonIgnore
+    @Column(name = "versao_sessao", nullable = false)
+    private long versaoSessao;
+    @JsonIgnore
     @Column(name = "hash_senha", nullable = false, length = 300)
     private String hashSenha;
 
@@ -40,9 +43,13 @@ public class Usuario {
     public String getNomeCompleto() { return nomeCompleto; }
     public Perfil getPerfil() { return perfil; }
     public boolean isAtivo() { return ativo; }
+    public long getVersaoSessao() { return versaoSessao; }
 
     public void ativar() { ativo = true; }
-    public void desativar() { ativo = false; }
+    public void desativar() {
+        if (ativo) versaoSessao = Math.incrementExact(versaoSessao);
+        ativo = false;
+    }
 
     public boolean podeMovimentarEstoque() {
         return ativo && perfil.podeMovimentarEstoque();

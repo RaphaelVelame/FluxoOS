@@ -13,8 +13,21 @@
 | `BOOTSTRAP_PASSWORD` | vazio | Obrigatória somente em banco sem usuários |
 | `DEMO_DATA` | `false` | Carga demonstrativa somente em banco vazio |
 | `COOKIE_SECURE` | `false` local / `true` postgres | Cookie somente por HTTPS |
+| `MAX_SESSOES` | `20` | Sessões ativas no total por JVM; excedente recebe 429 |
+| `LOGIN_MAX_ERROS` | `5` | Erros por usuário para bloquear novos logins |
+| `LOGIN_MAX_ERROS_IP` | `30` | Erros por IP para bloqueio adicional |
+| `LOGIN_JANELA_MINUTOS` | `15` | Janela de contagem das falhas |
+| `LOGIN_BLOQUEIO_MINUTOS` | `5` | Prazo de bloqueio, sem extensão por tentativas recusadas |
+| `LOGIN_MAX_IDENTIFICADORES` | `10000` | Capacidade de cada mapa: nomes e IPs |
+| `SEGURANCA_LIMPEZA_MS` | `60000` | Intervalo da manutenção de sessões e tentativas |
 
 `application.yml` contém a configuração padrão, e `application-postgres.yml` contém as opções do perfil `postgres`. O acesso a dados usa Spring Data JPA/Hibernate, com validação do esquema criado pelo Flyway. `.env.example` documenta as variáveis. `scripts/executar.ps1` carrega o `.env`, com prioridade para variáveis já exportadas, e restaura o ambiente do terminal ao terminar. O arquivo aceita linhas `NOME=valor` e valores entre aspas simples ou duplas; não executa comandos nem expande variáveis. Docker Compose também lê `.env`; para Java/Maven diretamente, exporte as variáveis ou use um gerenciador de segredos. Nunca versione credenciais, banco ou backups.
+
+## Sessões e bloqueios
+
+O limite de sessões é global por instância, não por conta. Ao atingir 20, uma nova entrada é recusada sem derrubar quem já está conectado. Fechar o navegador não avisa o servidor: a sessão é descartada após 30 minutos de inatividade ou oito horas absolutas; logout libera a vaga imediatamente. Desativação e troca de senha continuam invalidando sessões pela versão da conta. A manutenção as remove em até um ciclo, e uma nova admissão também faz essa limpeza. A consulta de estado usada pelo descarte lê somente alterações confirmadas, preservando sessões em rollback.
+
+Os mapas de tentativas descartam registros sem falhas nem bloqueio vigente. Se a capacidade estiver toda ocupada, identidades novas são temporariamente recusadas até liberar espaço; bloqueios ativos não são expulsos para abrir vaga. Credenciais válidas removem o contador do usuário, mas não zeram o agregado de IP. Reiniciar a JVM encerra sessões e limpa os contadores; múltiplas instâncias precisam de armazenamento compartilhado para impor um limite único na implantação inteira. A retenção dos eventos de auditoria no banco permanece uma política operacional separada.
 
 ## PostgreSQL local
 
