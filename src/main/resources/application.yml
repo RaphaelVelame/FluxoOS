@@ -11,6 +11,7 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+    locations: classpath:db/migration,classpath:db/{vendor}
   jackson:
     serialization:
       write-dates-as-timestamps: false

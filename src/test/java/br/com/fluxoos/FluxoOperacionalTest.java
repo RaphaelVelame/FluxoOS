@@ -44,6 +44,7 @@ class FluxoOperacionalTest {
     @Autowired UsuarioRepository usuarios;
     @Autowired OrdemServicoService ordens;
     @Autowired EstoqueService estoque;
+    @Autowired EstoqueRepository estoquesRepository;
     @Autowired org.springframework.transaction.PlatformTransactionManager transacoes;
 
     @BeforeEach void preparar() {
@@ -52,6 +53,7 @@ class FluxoOperacionalTest {
         auditoria.deleteAllInBatch();
         ordensRepository.deleteAll();
         materiais.deleteAllInBatch();
+        estoquesRepository.deleteAllInBatch();
         usuarios.deleteAllInBatch();
         contas.clear();
         inserirUsuario(1, "admin", Perfil.CHEFE);
@@ -300,6 +302,66 @@ class FluxoOperacionalTest {
         assertThat(lista.toString()).doesNotContain("hash_senha", "pbkdf2", SENHA);
         enviar(patch("/api/usuarios/" + usuario(1).getId() + "/status"), Map.of("ativo", false), admin, 400);
         enviar(get("/api/ordens/999999"), null, admin, 404);
+    }
+
+    @Test void estoquesDaEmpresaEDosClientesMantemSaldosEConsumosSeparados() throws Exception {
+        Acesso admin = login("admin");
+        long empresa = enviar(post("/api/estoques"),Map.of("codigo","EMP","nome","Empresa matriz","tipo","EMPRESA"),admin,201).get("id").asLong();
+        long cliente = enviar(post("/api/estoques"),Map.of("codigo","CLI","nome","Cliente São Lucas","tipo","CLIENTE"),admin,201).get("id").asLong();
+        long proprio = enviar(post("/api/materiais"),Map.of("codigo","CABO-EMP","nome","Cabo","unidade","m","minimo",0,"estoqueId",empresa),admin,201).get("id").asLong();
+        long terceiro = enviar(post("/api/materiais"),Map.of("codigo","CABO-CLI","nome","Cabo","unidade","m","minimo",0,"estoqueId",cliente),admin,201).get("id").asLong();
+        enviar(post("/api/materiais/"+proprio+"/movimentos").header("Idempotency-Key",chave()),Map.of("tipo","ENTRADA","variacao",10,"observacao","Estoque próprio"),admin,200);
+        enviar(post("/api/materiais/"+terceiro+"/movimentos").header("Idempotency-Key",chave()),Map.of("tipo","ENTRADA","variacao",7,"observacao","Em custódia"),admin,200);
+        long os = prepararOrdem();
+        enviar(post("/api/ordens/"+os+"/materiais").header("Idempotency-Key",chave()),Map.of("materialId",terceiro,"quantidade",2,"observacao","Uso autorizado"),admin,200);
+        assertThat(materiais.findById(proprio).orElseThrow().getQuantidade()).isEqualTo(10);
+        assertThat(materiais.findById(terceiro).orElseThrow().getQuantidade()).isEqualTo(5);
+        assertThat(enviar(get("/api/ordens/"+os),null,admin,200).get("itens").get(0).get("estoqueId").asLong()).isEqualTo(cliente);
+        assertThat(movimentos.findAll().stream().filter(m->m.getMaterialId()==terceiro).map(MovimentoEstoque::getEstoqueId)).containsOnly(cliente);
+        assertThat(enviar(get("/api/estoques"),null,admin,200)).hasSize(2);
+    }
+
+    @Test void classificacaoEmLotePreservaSaldoHistoricoERepeticaoEhSegura() throws Exception {
+        Usuario admin = usuario(1);
+        Material aindaLivre = prepararMaterial(3);
+        Material primeiro = prepararMaterial(9);
+        Material segundo = prepararMaterial(2);
+        estoque.movimentar(admin,primeiro.getId(),TipoMovimento.ENTRADA,1,"Entrada sem proprietário conhecido",chave());
+        long os = prepararOrdem();
+        estoque.consumir(admin,os,primeiro.getId(),2,"Uso anterior à classificação",chave());
+        long movimentosAntes = movimentos.count();
+        long destino = estoque.cadastrarEstoque(admin,"CLI-ACME","Cliente Acme",TipoEstoque.CLIENTE).getId();
+        assertThat(estoque.classificar(admin,destino,List.of(segundo.getId(),primeiro.getId(),primeiro.getId()))).isEqualTo(2);
+        assertThat(estoque.classificar(admin,destino,List.of(primeiro.getId(),segundo.getId()))).isZero();
+        assertThat(materiais.findById(primeiro.getId()).orElseThrow().getQuantidade()).isEqualTo(8);
+        assertThat(materiais.findById(segundo.getId()).orElseThrow().getQuantidade()).isEqualTo(2);
+        assertThat(movimentos.count()).isEqualTo(movimentosAntes);
+        assertThat(movimentos.findAll()).extracting(MovimentoEstoque::getEstoqueId).containsOnlyNulls();
+        assertThat(ordens.buscar(os).itens().getFirst().estoqueId()).isNull();
+        long outro = estoque.cadastrarEstoque(admin,"EMPRESA","Matriz",TipoEstoque.EMPRESA).getId();
+        assertThatThrownBy(()->estoque.classificar(admin,outro,List.of(aindaLivre.getId(),primeiro.getId())))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(materiais.findById(aindaLivre.getId()).orElseThrow().getEstoqueId()).isNull();
+        assertThat(materiais.findById(primeiro.getId()).orElseThrow().getEstoqueId()).isEqualTo(destino);
+        assertThat(auditoria.findAll().stream().filter(a->a.getTipo().equals("MATERIAL_CLASSIFICADO"))).hasSize(2);
+    }
+
+    @Test void cadastroEVinculoExigemGestorEReferenciasValidas() throws Exception {
+        Acesso admin = login("admin");
+        Acesso tecnico = login("tecnico");
+        long id = enviar(post("/api/estoques"),Map.of("codigo","EMP","nome","Empresa","tipo","EMPRESA"),admin,201).get("id").asLong();
+        long material = prepararMaterial(0).getId();
+        enviar(post("/api/estoques"),Map.of("codigo","CLI","nome","Cliente","tipo","CLIENTE"),tecnico,403);
+        enviar(patch("/api/materiais/estoque"),Map.of("estoqueId",id,"materialIds",List.of(material)),tecnico,403);
+        enviar(patch("/api/materiais/estoque"),Map.of("estoqueId",999999,"materialIds",List.of(material)),admin,404);
+        enviar(patch("/api/materiais/estoque"),Map.of("estoqueId",id,"materialIds",List.of()),admin,400);
+        enviar(patch("/api/materiais/estoque"),Map.of("estoqueId",id,"materialIds",List.of(material,999999L)),admin,404);
+        assertThat(materiais.findById(material).orElseThrow().getEstoqueId()).isNull();
+        enviar(post("/api/estoques"),Map.of("codigo","EMP","nome","Duplicado","tipo","CLIENTE"),admin,409);
+        enviar(post("/api/estoques"),Map.of("codigo","CLI","nome"," ","tipo","CLIENTE"),admin,400);
+        enviar(post("/api/estoques"),Map.of("codigo","CLI","nome","Cliente","tipo","OUTRO"),admin,400);
+        enviar(post("/api/materiais"),Map.of("codigo","SEM-REF","nome","Material","unidade","un","minimo",0,"estoqueId",999999),admin,404);
+        assertThat(enviar(get("/api/estoques"),null,tecnico,200)).hasSize(1);
     }
 
     @Test void loginFalhoTemMensagemUniformeEBloqueiaTentativas() throws Exception {

@@ -10,6 +10,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
@@ -83,6 +85,69 @@ class HttpFirewallTest {
         String cookie = login.headers().firstValue("Set-Cookie").orElseThrow().split(";", 2)[0];
         assertThat(enviar(HttpRequest.newBuilder(uri("/api/usuarios")).header("Cookie", cookie).GET().build()).statusCode()).isEqualTo(200);
         assertThat(enviar(HttpRequest.newBuilder(uri("/api;revisao/usuarios")).header("Cookie", cookie).GET().build()).statusCode()).isEqualTo(400);
+    }
+
+    @Test void corpoEmBlocosTambemRespeitaLimiteDeBytes() throws Exception {
+        // Publisher sem tamanho conhecido produz Transfer-Encoding: chunked em HTTP/1.1.
+        String corpo = "{\"usuario\":\"admin\",\"senha\":\"" + "á".repeat(150_001) + "\"}";
+        var publisher = HttpRequest.BodyPublishers.ofInputStream(() ->
+                new ByteArrayInputStream(corpo.getBytes(StandardCharsets.UTF_8)));
+        assertThat(publisher.contentLength()).isEqualTo(-1);
+        var resposta = enviar(HttpRequest.newBuilder(uri("/api/auth/login"))
+                .version(HttpClient.Version.HTTP_1_1).header("Content-Type","application/json")
+                .POST(publisher).build());
+        assertThat(resposta.statusCode()).isEqualTo(413);
+    }
+
+    @Test void corpoEmBlocosValidoContinuaDisponivelParaOController() throws Exception {
+        String corpo="{\"usuario\":\"admin\",\"senha\":\"Senha-firewall-testes-2026!\"}";
+        var login=enviar(HttpRequest.newBuilder(uri("/api/auth/login"))
+                .version(HttpClient.Version.HTTP_1_1).header("Content-Type","application/json")
+                .POST(HttpRequest.BodyPublishers.ofInputStream(()->new ByteArrayInputStream(corpo.getBytes(StandardCharsets.UTF_8))))
+                .build());
+        assertThat(login.statusCode()).isEqualTo(200);
+        String cookie=login.headers().firstValue("Set-Cookie").orElseThrow().split(";",2)[0];
+        String csrf=new ObjectMapper().readTree(login.body()).get("csrf").asText();
+        String estoque="{\"codigo\":\""+java.util.UUID.randomUUID()+"\",\"nome\":\"São Lucas\",\"tipo\":\"CLIENTE\"}";
+        String estoqueNoLimite=" ".repeat(300_000-estoque.getBytes(StandardCharsets.UTF_8).length)+estoque;
+        var criado=enviar(HttpRequest.newBuilder(uri("/api/estoques"))
+                .version(HttpClient.Version.HTTP_1_1).header("Content-Type","application/json")
+                .header("Cookie",cookie).header("X-CSRF-Token",csrf)
+                .POST(HttpRequest.BodyPublishers.ofInputStream(()->new ByteArrayInputStream(estoqueNoLimite.getBytes(StandardCharsets.UTF_8))))
+                .build());
+        assertThat(criado.statusCode()).isEqualTo(201);
+        assertThat(new ObjectMapper().readTree(criado.body()).get("nome").asText()).isEqualTo("São Lucas");
+        assertThat(enviar(HttpRequest.newBuilder(uri("/api/auth/logout"))
+                .header("Cookie",cookie).header("X-CSRF-Token",csrf)
+                .POST(HttpRequest.BodyPublishers.noBody()).build()).statusCode()).isEqualTo(200);
+    }
+
+    @Test void errosDoProtocoloNaoViramFalhasInternas() throws Exception {
+        var login=enviar(HttpRequest.newBuilder(uri("/api/auth/login"))
+                .header("Content-Type","application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"usuario\":\"admin\",\"senha\":\"Senha-firewall-testes-2026!\"}"))
+                .build());
+        assertThat(login.statusCode()).isEqualTo(200);
+        String cookie=login.headers().firstValue("Set-Cookie").orElseThrow().split(";",2)[0];
+        String csrf=new ObjectMapper().readTree(login.body()).get("csrf").asText();
+        try {
+            var rota=enviar(HttpRequest.newBuilder(uri("/api/rota-inexistente")).header("Cookie",cookie).GET().build());
+            assertThat(rota.statusCode()).isEqualTo(404);
+            var metodo=enviar(HttpRequest.newBuilder(uri("/api/auth/login")).header("Cookie",cookie).GET().build());
+            assertThat(metodo.statusCode()).isEqualTo(405);
+            assertThat(metodo.headers().firstValue("Allow").orElseThrow()).contains("POST");
+            var formato=enviar(HttpRequest.newBuilder(uri("/api/auth/login"))
+                    .header("Content-Type","text/plain").POST(HttpRequest.BodyPublishers.ofString("{}" )).build());
+            assertThat(formato.statusCode()).isEqualTo(415);
+            var identificador=enviar(HttpRequest.newBuilder(uri("/api/ordens/abc")).header("Cookie",cookie).GET().build());
+            assertThat(identificador.statusCode()).isEqualTo(400);
+            assertThat(rota.body()+metodo.body()+formato.body()+identificador.body())
+                    .doesNotContain("Exception", "stackTrace", "br.com.fluxoos");
+        } finally {
+            enviar(HttpRequest.newBuilder(uri("/api/auth/logout"))
+                    .header("Cookie",cookie).header("X-CSRF-Token",csrf)
+                    .POST(HttpRequest.BodyPublishers.noBody()).build());
+        }
     }
 
     private URI uri(String caminho) { return URI.create("http://127.0.0.1:" + porta + contexto() + caminho); }

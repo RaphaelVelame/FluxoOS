@@ -15,32 +15,52 @@ public class Material {
     private String nome;
     @Column(nullable = false, length = 20)
     private String unidade;
+    @Column(name = "referencia_fabricante", length = 160)
+    private String referenciaFabricante;
     @Column(nullable = false)
     private int quantidade;
     @Column(name = "quantidade_minima", nullable = false)
     private int quantidadeMinima;
     @Column(nullable = false)
     private boolean ativo;
+    @Column(name = "estoque_id")
+    private Long estoqueId;
 
     protected Material() {}
 
     public Material(String codigo, String nome, String unidade,
                     int quantidade, int quantidadeMinima, boolean ativo) {
+        this(codigo, nome, unidade, quantidade, quantidadeMinima, ativo, null);
+    }
+
+    public Material(String codigo, String nome, String unidade,
+                    int quantidade, int quantidadeMinima, boolean ativo, Long estoqueId) {
         this.codigo = Validacoes.textoObrigatorio(codigo, "Código");
         this.nome = Validacoes.textoObrigatorio(nome, "Nome do material");
         this.unidade = Validacoes.textoObrigatorio(unidade, "Unidade");
         this.quantidade = Validacoes.naoNegativo(quantidade, "Saldo inicial");
         this.quantidadeMinima = Validacoes.naoNegativo(quantidadeMinima, "Quantidade mínima");
         this.ativo = ativo;
+        this.estoqueId = estoqueId;
     }
 
     public long getId() { return id; }
     public String getCodigo() { return codigo; }
     public String getNome() { return nome; }
     public String getUnidade() { return unidade; }
+    public String getReferenciaFabricante() { return referenciaFabricante; }
     public int getQuantidade() { return quantidade; }
     public int getQuantidadeMinima() { return quantidadeMinima; }
     public boolean isAtivo() { return ativo; }
+    public Long getEstoqueId() { return estoqueId; }
+
+    public boolean classificarEstoque(long destino) {
+        if (destino <= 0) throw new IllegalArgumentException("Estoque inválido.");
+        if (java.util.Objects.equals(estoqueId, destino)) return false;
+        if (estoqueId != null) throw new IllegalStateException("O material já pertence a um estoque. Uma mudança de proprietário exige transferência de estoque.");
+        estoqueId = destino;
+        return true;
+    }
 
     public boolean isAbaixoDoMinimo() {
         return quantidade < quantidadeMinima;

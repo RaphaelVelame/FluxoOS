@@ -43,7 +43,7 @@ A interface adapta-se ao navegador móvel. Para acessá-la em um celular físico
 
 ## Antes de implantação
 
-- Use PostgreSQL e ensaie o fluxo e as migrações no banco de destino com `./scripts/testar-postgres.ps1`. Ele cria um esquema isolado temporário e executa os testes de fluxo HTTP, rollback, concorrência, idempotência e assinatura contra o PostgreSQL real.
+- Ensaie as migrações em banco descartável com `./scripts/testar-postgres.ps1`. O script cria um cluster próprio em porta aleatória, executa os testes de fluxo HTTP, constraints, ida/volta, concorrência, idempotência e assinatura e encerra esse cluster. Não utiliza a conexão operacional do `.env`.
 - Configure HTTPS, origem e cabeçalhos de proxy confiáveis. Use `COOKIE_SECURE=true`. O filtro compara Origin com o endereço efetivamente percebido pelo servidor; configure corretamente o proxy antes de disponibilizar a aplicação.
 - Remova a senha inicial do ambiente após o primeiro provisionamento. Não use dados demonstrativos em produção.
 - A implementação de sessão e limite de login é por JVM. Use uma única instância enquanto não houver armazenamento distribuído. Reiniciar encerra as sessões.
@@ -59,6 +59,18 @@ Para PostgreSQL, use `pg_dump` em formato customizado e `pg_restore` em um banco
 
 `mvnw verify` compila, executa os testes e empacota o JAR. A aplicação está pronta para teste local quando o log mostra `Started FluxoOsApplication` e a página inicial abre. Os testes não dependem de uma porta fixa nem do banco de desenvolvimento. Migrações já aplicadas não devem ser editadas; acrescente arquivos `V2__...sql`, `V3__...sql` etc.
 
-`scripts/testar-postgres.ps1` usa `DATABASE_URL` sem parâmetros e credenciais de um usuário com permissão de criar esquemas no banco. Cada execução cria `fluxoos_test_<identificador aleatório>` e o remove em `finally`. A aplicação continua usando suas tabelas em `public`. Não defina `TEST_DATABASE_URL` manualmente para um banco com dados: o teste operacional limpa as tabelas do esquema escolhido. No CI, essas variáveis apontam exclusivamente para um banco descartável do serviço PostgreSQL.
+`scripts/testar-postgres.ps1` encontra os binários `initdb` e `pg_ctl`, cria `target/postgres-test-<identificador>`
+e escolhe uma porta livre em loopback. As variáveis de
+teste são definidas somente para esse cluster e restauradas ao final. `-IncluirImportacao` também
+testa a importação. O build fica em `target/postgres-verificacao`. Uma interrupção forçada pode
+exigir encerrar manualmente esse cluster pelo seu diretório específico; não parar o serviço
+PostgreSQL operacional. Não defina `TEST_DATABASE_URL` para um banco com dados: os testes
+operacionais limpam as tabelas do banco de testes. No CI, o marcador `TEST_DATABASE_DISPOSABLE=true`
+identifica o serviço descartável usado na execução.
+
+O procedimento de ida, pré-validação e reversão das constraints está em
+[migrations de integridade](MIGRACOES_INTEGRIDADE_2026-11-12.md). Os scripts de volta ficam fora das
+locations do Flyway e não são executados automaticamente. Não apagar histórico do Flyway nem
+editar migrations já aplicadas. A presença de V6–V12 no código não autoriza sua execução em produção.
 
 O endpoint de assinatura e as consultas da equipe seguem as permissões de consulta do README. Se os atendimentos precisarem de segregação por unidade, organização ou solicitante, implemente esse filtro no servidor antes de incluir dados reais desse escopo.

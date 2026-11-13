@@ -14,6 +14,8 @@ public class MovimentoEstoque {
     private Long id;
     @Column(name = "material_id", nullable = false)
     private long materialId;
+    @Column(name = "estoque_id")
+    private Long estoqueId;
     @Column(name = "usuario_id", nullable = false)
     private long usuarioId;
     @Column(name = "ordem_id")
@@ -35,6 +37,7 @@ public class MovimentoEstoque {
     public MovimentoEstoque(Material material, Usuario usuario, OrdemServico ordem,
                             TipoMovimento tipo, int variacao, int saldoApos, String observacao) {
         this.materialId = material.getId();
+        this.estoqueId = material.getEstoqueId();
         this.usuarioId = usuario.getId();
         this.ordemServicoId = ordem == null ? null : ordem.getId();
         this.tipoMovimento = Objects.requireNonNull(tipo, "Tipo obrigatório.");
@@ -46,11 +49,12 @@ public class MovimentoEstoque {
     public String descreverEvento() {
         return "Movimentação " + tipoMovimento + " material=" + materialId
                 + " variacao=" + variacao + " saldoApos=" + saldoApos
-                + " usuario=" + usuarioId + " OS=" + ordemServicoId;
+                + " usuario=" + usuarioId + " OS=" + ordemServicoId + " estoque=" + estoqueId;
     }
 
     public long getId() { return id; }
     public long getMaterialId() { return materialId; }
+    public Long getEstoqueId() { return estoqueId; }
     public long getUsuarioId() { return usuarioId; }
     public Long getOrdemServicoId() { return ordemServicoId; }
     public TipoMovimento getTipoMovimento() { return tipoMovimento; }

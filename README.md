@@ -39,6 +39,8 @@ Após a criação da conta, remova a variável de senha do ambiente. Para mudar 
 - Painel com ordens abertas, em andamento, concluídas e alertas de estoque.
 - Abertura de OS, filtros, atribuição e reatribuição de técnico, início, relato e histórico.
 - Cadastro de materiais, entradas, devoluções, ajustes positivos/negativos e ativação/desativação.
+- [Separação do estoque por empresa e clientes](docs/ESTOQUES_POR_PROPRIETARIO.md), com filtros,
+  classificação individual/em lote e identificação da origem no consumo e no histórico.
 - Consumo dentro da OS: atualização de saldo, item, movimento, auditoria e chave de idempotência na **mesma transação JPA**.
 - Conclusão com relato obrigatório, nome do responsável e assinatura PNG capturada por dedo, caneta ou mouse e persistida no banco.
 - Gestão de contas pela chefia, desativação de acesso e consulta de eventos de segurança.
@@ -122,6 +124,49 @@ Cada banco tem sua própria carga inicial. Trocar a URL não transfere os dados 
 
 ## Testes e distribuição
 
+### Importar a planilha de estoque
+
+O importador lê o layout da aba `Estoque` com código, descrição, referência do fabricante, unidade,
+saldo anterior (`H`) e entradas diárias (`I:AM`). Primeiro confira o arquivo sem gravar:
+
+```powershell
+.\scripts\importar-estoque.ps1 -Planilha 'E:\Downloads\planilha-controle-estoque.xlsx' -Validar
+```
+
+Depois de iniciar a aplicação para aplicar as migrações e criar a conta administrativa, importe
+no PostgreSQL configurado no `.env`:
+
+```powershell
+.\scripts\importar-estoque.ps1 -Planilha 'E:\Downloads\planilha-controle-estoque.xlsx'
+```
+
+A carga inclui materiais zerados e referências de fabricante, que aparecem na consulta e na busca
+do estoque. Calcula o saldo pelas células de origem, mesmo sem total em cache, e rejeita totais
+divergentes, quantidades negativas/fracionárias e unidades desconhecidas. Como o arquivo não informa
+estoque mínimo, os novos materiais recebem mínimo zero. `Unid.` vira `un`; `Met.`/`Met,` viram `m`.
+Códigos numéricos perdem apenas o sufixo decimal `.0`; descrições e referências preservam o texto,
+removendo espaços nas extremidades.
+
+Um código repetido recebe o sufixo `-L<linha>` a partir da segunda ocorrência; um código ausente vira
+`SEM-COD-L<linha>`. O código original e a linha ficam na auditoria. Materiais de nomes iguais são
+mantidos separadamente. Se qualquer código já existir no banco, o lote inteiro é cancelado para
+evitar sobrescrever estoque. Repetir o mesmo arquivo, identificado por SHA-256, não reaplica saldos.
+Alterar um arquivo já importado não constitui um fluxo de atualização: os códigos existentes
+continuam protegidos contra substituição.
+
+Materiais, movimentos de entrada e auditoria são gravados na mesma transação. Os movimentos usam a
+data da importação; a data original de cada entrada diária fica na observação, junto da célula de
+origem. O saldo anterior é identificado como tal, sem inventar uma data histórica. O script usa a
+primeira conta ativa de chefia para identificar a carga. A planilha original permanece intacta.
+
+```powershell
+.\tests\importacao-estoque.ps1
+.\scripts\testar-postgres.ps1 -IncluirImportacao
+```
+
+O segundo comando cria um cluster PostgreSQL descartável e testa persistência, preservação de
+registros existentes, reimportação e rollback. Não utiliza o banco configurado no `.env`.
+
 ```powershell
 .\scripts\testar.ps1
 .\scripts\testar-postgres.ps1
@@ -133,9 +178,30 @@ No Linux/macOS, use `sh ./scripts/testar.sh` e `sh ./mvnw verify`. A suíte padr
 
 Os [testes de interface](tests/e2e/README.md) verificam gravação confirmada seguida de falha de consulta, perda de resposta e recuperação sem reenvio. Usam Node 24 e Playwright somente para testes, iniciando um servidor próprio com H2 em memória. O CI também executa essa suíte. A abertura de OS pela API agora exige `Idempotency-Key`, conforme o [contrato HTTP](docs/API.md).
 
-`testar-postgres.ps1` carrega a conexão do `.env`, cria um esquema temporário com nome aleatório, aplica as migrações e executa os mesmos testes operacionais no PostgreSQL real. O esquema é removido ao final, inclusive quando os testes falham; as tabelas do esquema `public` permanecem preservadas. A URL de conexão para esse script deve estar sem parâmetros. Uma interrupção forçada do processo pode exigir a remoção manual do esquema `fluxoos_test_...` deixado para trás. O GitHub Actions executa `verify` com Java 25 e repete os testes operacionais em um PostgreSQL 18 descartável.
+`testar-postgres.ps1` usa `initdb` e `pg_ctl` da instalação local para criar um **cluster descartável**,
+restrito a `127.0.0.1`, em porta aleatória e diretório próprio em `target/postgres-test-*`. Não lê a
+conexão do `.env`. Executa os testes operacionais e de constraints e encerra o cluster em `finally`;
+os logs e dados sintéticos ficam no diretório de teste. `-IncluirImportacao` também ensaia o importador
+nesse cluster. O GitHub Actions usa seu serviço PostgreSQL descartável para a mesma suíte Java.
+
+As [migrations V6–V12 e suas reversões](docs/MIGRACOES_INTEGRIDADE_2026-11-12.md) implementam 31
+constraints com variantes PostgreSQL/H2. O Flyway mantém V1–V5 no diretório comum e seleciona as
+novas versões pelo banco. Migrações são aplicadas no início do aplicativo: criar os arquivos não
+significa que tenham sido aplicados ao banco operacional.
+
+Se o JAR em `target` estiver em uso, gere uma saída independente sem parar o aplicativo:
+
+```powershell
+.\mvnw.cmd -Dfluxoos.build.directory=target/verificacao verify
+```
+
+Para testar essa saída na interface, defina `FLUXOOS_TEST_JAR` com o caminho absoluto do novo JAR
+antes de executar a suíte de `tests/e2e`. Ela inicia seu próprio H2 em memória.
 
 Consulte [arquitetura](docs/ARQUITETURA.md), [API](docs/API.md) e [operação](docs/OPERACAO.md).
+
+A [revisão final de código e testes de 12/11/2026](docs/REVISAO_FINAL_2026-11-12.md) registra os
+defeitos reproduzidos e corrigidos, as atualizações de segurança e os limites da análise.
 
 ## Limites da entrega
 

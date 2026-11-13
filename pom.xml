@@ -7,8 +7,14 @@
   <properties>
     <java.version>25</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <fluxoos.build.directory>target</fluxoos.build.directory>
     <!-- A versao gerenciada pelo Spring Boot 3.5 reconhece apenas PostgreSQL ate 17. -->
     <flyway.version>11.20.0</flyway.version>
+    <!-- Correcoes de seguranca posteriores ao BOM do Spring Boot 3.5.16. -->
+    <tomcat.version>10.1.61</tomcat.version>
+    <jackson-bom.version>2.21.8</jackson-bom.version>
+    <log4j2.version>2.25.5</log4j2.version>
+    <postgresql.version>42.7.14</postgresql.version>
   </properties>
   <dependencies>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
@@ -21,5 +27,5 @@
     <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
   </dependencies>
-  <build><plugins><plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></build>
+  <build><directory>${fluxoos.build.directory}</directory><plugins><plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></build>
 </project>

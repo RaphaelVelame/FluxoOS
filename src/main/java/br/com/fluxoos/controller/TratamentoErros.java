@@ -11,6 +11,13 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.web.ErrorResponse;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.util.Map;
 
 @RestControllerAdvice
@@ -33,8 +40,22 @@ public class TratamentoErros {
                 .findFirst().orElse("Confira os campos informados.");
         return erro(400, mensagem);
     }
-    @ExceptionHandler({HttpMessageNotReadableException.class, MissingRequestHeaderException.class}) ResponseEntity<?> formato(Exception e) {
+    @ExceptionHandler({HttpMessageNotReadableException.class, MissingRequestHeaderException.class, TypeMismatchException.class}) ResponseEntity<?> formato(Exception e) {
         return erro(400, "Dados inválidos ou cabeçalho obrigatório ausente.");
+    }
+    @ExceptionHandler({HttpRequestMethodNotSupportedException.class, HttpMediaTypeNotSupportedException.class,
+            HttpMediaTypeNotAcceptableException.class, NoHandlerFoundException.class, NoResourceFoundException.class})
+    ResponseEntity<?> protocolo(Exception e) {
+        ErrorResponse resposta = (ErrorResponse) e;
+        String mensagem = switch (resposta.getStatusCode().value()) {
+            case 404 -> "Rota ou recurso ausente.";
+            case 405 -> "Metodo HTTP nao permitido nesta rota.";
+            case 406 -> "Formato de resposta nao disponivel.";
+            case 415 -> "Formato do corpo nao suportado. Use JSON.";
+            default -> "Requisicao invalida.";
+        };
+        return ResponseEntity.status(resposta.getStatusCode()).headers(resposta.getHeaders())
+                .body(Map.of("mensagem", mensagem));
     }
     @ExceptionHandler(Exception.class) ResponseEntity<?> inesperado(Exception e) {
         LOG.error("Falha interna de tipo {}", e.getClass().getSimpleName());

@@ -18,7 +18,7 @@ before(async()=>{
   base=`http://127.0.0.1:${port}`;
   log=createWriteStream(path.join(root,'target/e2e/server.log'));
   app=spawn(process.env.JAVA_HOME?path.join(process.env.JAVA_HOME,'bin','java'):'java',[
-    '-jar',path.join(root,'target/fluxoos-1.0.0-SNAPSHOT.jar'),
+    '-jar',process.env.FLUXOOS_TEST_JAR || path.join(root,'target/fluxoos-1.0.0-SNAPSHOT.jar'),
     '--spring.profiles.active=default','--spring.datasource.url=jdbc:h2:mem:e2e-gravacao;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE',
     '--spring.datasource.username=sa','--spring.datasource.password=',`--fluxoos.bootstrap-password=${password}`,
     '--fluxoos.demo=true','--fluxoos.cookie-secure=false','--fluxoos.seguranca.max-sessoes=20',
@@ -46,7 +46,10 @@ async function session(fn){
     await page.locator('#login-form button').click();await page.locator('#page-header h1').waitFor();
     await fn(page);
     assert.deepEqual(errors,[],'Erros JavaScript no navegador');
-  }finally{await context.close();}
+  }finally{await encerrarSessao(page);await context.close();}
+}
+async function encerrarSessao(page){
+  try{await page.evaluate(async()=>{const csrf=sessionStorage.getItem('fluxoos.csrf');if(csrf)await fetch('/api/auth/logout',{method:'POST',headers:{'X-CSRF-Token':csrf}});});}catch{}
 }
 async function route(page,hash,selector){await page.evaluate(h=>location.hash=h,hash);await page.locator(selector).waitFor();}
 async function newOrder(page,problem){await route(page,'ordens','#orders-list');await page.locator('#primary-action').click();await page.locator('#modal [name=solicitante]').fill('Teste E2E');await page.locator('#modal [name=local]').fill('Ambiente isolado');await page.locator('#modal [name=problema]').fill(problem);}
@@ -109,7 +112,10 @@ test('Falha ao ler detalhes depois de criar OS também oferece somente atualiza�
 }));
 
 test('Cadastro de material confirmado fecha modal apesar de falha de consulta',()=>session(async page=>{
+  const dono=await write(page,'/estoques',{codigo:crypto.randomUUID(),nome:'Empresa do cadastro E2E',tipo:'EMPRESA'});
+  await page.locator('#refresh').click();
   const code=crypto.randomUUID();await route(page,'estoque','#stock-list');await page.locator('#primary-action').click();
+  await page.locator('#modal [name=estoqueId]').selectOption(String(dono.id));
   await page.locator('#modal [name=codigo]').fill(code);await page.locator('#modal [name=nome]').fill('Cadastro E2E');await page.locator('#modal [name=unidade]').fill('un');
   await failReads(page);await page.locator('#modal button[type=submit]').click();await recovery(page);assert.equal((await data(page,'/materiais')).filter(m=>m.codigo===code).length,1);
 }));
@@ -214,6 +220,94 @@ test('Capacidade de sessões é informada no login e logout libera nova entrada'
     await page.locator('#login-form button').click();await page.locator('#page-header h1').waitFor();assert.equal((await page.request.get(base+'/api/auth/me')).status(),200);
   }finally{
     for(const acesso of acessos.slice(1))await fetch(base+'/api/auth/logout',{method:'POST',headers:{Cookie:acesso.cookie,'X-CSRF-Token':acesso.csrf}});
-    await context.close();
+    await encerrarSessao(page);await context.close();
   }
 });
+
+async function novoEstoqueUi(page,tipo,nome){
+  await route(page,'estoque','#new-stock');await page.locator('#new-stock').click();
+  await page.locator('#modal [name=tipo]').selectOption(tipo);
+  await page.locator('#modal [name=codigo]').fill(crypto.randomUUID());
+  await page.locator('#modal [name=nome]').fill(nome);
+  const salvo=page.waitForResponse(r=>r.request().method()==='POST'&&r.url()===base+'/api/estoques');
+  await page.locator('#modal button[type=submit]').click();
+  const resposta=await salvo;assert.equal(resposta.status(),201);const dono=await resposta.json();
+  await page.locator('#modal').waitFor({state:'hidden'});
+  await page.locator(`#stock-owner option[value="${dono.id}"]`).waitFor({state:'attached'});
+  return dono;
+}
+async function materialDoEstoque(page,estoqueId,nome='Cabo de rede compartilhado'){
+  const m=await write(page,'/materiais',{codigo:crypto.randomUUID(),nome,unidade:'m',minimo:0,estoqueId});
+  await write(page,`/materiais/${m.id}/movimentos`,{tipo:'ENTRADA',variacao:10,observacao:'Entrada do proprietário'});
+  return m;
+}
+
+test('Empresa e clientes possuem cadastros, filtros e saldos separados no estoque',()=>session(async page=>{
+  const empresa=await novoEstoqueUi(page,'EMPRESA','Matriz de serviços');
+  const cliente=await novoEstoqueUi(page,'CLIENTE','São Lucas · Unidade de serviços');
+  const proprio=await materialDoEstoque(page,empresa.id),terceiro=await materialDoEstoque(page,cliente.id);
+  await page.locator('#refresh').click();await route(page,'estoque',`[data-history="${terceiro.id}"]`);
+  await page.locator('#stock-kind').selectOption('EMPRESA');await page.locator('#stock-owner').selectOption(String(empresa.id));
+  assert.equal(await page.locator('.stock-card').count(),1);
+  assert.match(await page.locator('.stock-card .owner-badge').innerText(),/Empresa · Matriz/);
+  assert.equal(await page.locator(`[data-history="${proprio.id}"]`).count(),1);
+  await page.locator('#stock-kind').selectOption('CLIENTE');await page.locator('#stock-owner').selectOption(String(cliente.id));
+  assert.equal(await page.locator('.stock-card').count(),1);assert.equal(await page.locator(`[data-history="${proprio.id}"]`).count(),0);
+  assert.match(await page.locator('.stock-card .owner-badge').innerText(),/Cliente · São Lucas/);
+  await page.locator(`[data-move="${terceiro.id}"]`).click();
+  await page.locator('#modal [name=variacao]').fill('3');await page.locator('#modal [name=observacao]').fill('Reposição do cliente');
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  const materiais=await data(page,'/materiais');assert.equal(materiais.find(m=>m.id===proprio.id).quantidade,10);assert.equal(materiais.find(m=>m.id===terceiro.id).quantidade,13);
+  await page.locator('#stock-kind').waitFor();await page.locator('#stock-kind').selectOption('CLIENTE');await page.locator('#stock-owner').selectOption(String(cliente.id));
+  await page.setViewportSize({width:1440,height:1050});await page.screenshot({path:path.join(root,'target/e2e/estoques-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(root,'target/e2e/estoques-mobile.png'),fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+}));
+
+test('Classificação em lote confirma proprietário sem regravar saldo ou histórico',()=>session(async page=>{
+  const dono=await write(page,'/estoques',{codigo:crypto.randomUUID(),nome:'Cliente da classificação',tipo:'CLIENTE'});
+  const m=await material(page),antes=(await data(page,'/movimentos')).filter(v=>v.materialId===m.id);
+  assert.equal(antes[0].estoqueId,null);
+  await page.locator('#refresh').click();await route(page,'estoque',`[data-classify="${m.id}"]`);
+  await page.locator('#stock-kind').selectOption('SEM');await page.locator('#stock-search').fill(m.codigo);
+  await page.locator(`[data-classify-select="${m.id}"]`).check();
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('data-classify-select')),String(m.id));
+  await page.locator('#classify-selected').click();
+  await page.locator('#modal [name=estoqueId]').selectOption(String(dono.id));
+  let patches=0;page.on('request',r=>{if(r.method()==='PATCH'&&r.url()===base+'/api/materiais/estoque')patches++;});
+  await failReads(page);await page.locator('#modal button[type=submit]').click();await recovery(page);
+  const salvo=(await data(page,'/materiais')).find(x=>x.id===m.id);
+  assert.equal(salvo.estoqueId,dono.id);assert.equal(salvo.quantidade,10);assert.equal(patches,1);
+  assert.deepEqual((await data(page,'/movimentos')).filter(v=>v.materialId===m.id),antes);
+  await page.locator('#stock-kind').selectOption('CLIENTE');await page.locator('#stock-owner').selectOption(String(dono.id));
+  assert.equal(await page.locator(`[data-classify="${m.id}"]`).count(),0);
+  await page.locator(`[data-history="${m.id}"]`).click();assert.match(await page.locator('#modal .movement .item-owner').innerText(),/Sem classificação/);
+}));
+
+test('Consumo na OS identifica e preserva o estoque do cliente',()=>session(async page=>{
+  const cliente=await write(page,'/estoques',{codigo:crypto.randomUUID(),nome:'Cliente do atendimento',tipo:'CLIENTE'});
+  const m=await materialDoEstoque(page,cliente.id,'Material do cliente no atendimento'),o=await order(page,{start:true});
+  await page.locator('#refresh').click();await route(page,'estoque',`[data-history="${m.id}"]`);
+  await route(page,`ordens/${o.id}`,'#consume');await page.locator('#consume').click();
+  assert.match(await page.locator(`#modal [name=materialId] option[value="${m.id}"]`).innerText(),/Cliente do atendimento/);
+  await page.locator('#modal [name=materialId]').selectOption(String(m.id));await page.locator('#modal [name=quantidade]').fill('2');await page.locator('#modal [name=observacao]').fill('Uso do material do cliente');
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await page.locator('.line-item .item-owner').waitFor();assert.match(await page.locator('.line-item .item-owner').innerText(),/Cliente do atendimento/);
+  const item=(await data(page,`/ordens/${o.id}`)).itens.find(i=>i.materialId===m.id);assert.equal(item.estoqueId,cliente.id);
+  assert.equal((await data(page,'/materiais')).find(x=>x.id===m.id).quantidade,8);
+}));
+
+test('Estoque identificado não vira sem classificação quando o cadastro ainda não foi carregado',()=>session(async page=>{
+  const e=await write(page,'/estoques',{codigo:crypto.randomUUID(),nome:'Cliente do cadastro defasado',tipo:'CLIENTE'});
+  const m=await materialDoEstoque(page,e.id);
+  const semDono=(await data(page,'/materiais')).filter(x=>x.ativo&&x.estoqueId==null).length;
+  await page.route('**/api/estoques',r=>r.request().method()==='GET'
+    ?r.fulfill({status:200,contentType:'application/json',body:'[]'}):r.continue());
+  await page.locator('#refresh').click();await route(page,'estoque',`[data-history="${m.id}"]`);
+  const card=page.locator(`.stock-card:has([data-history="${m.id}"])`);
+  assert.equal(await card.locator('.owner-badge').innerText(),`Estoque #${e.id}`);
+  assert.equal(await card.locator('[data-classify]').count(),0);
+  assert.equal(Number(await page.locator('.ownership-counts span').filter({hasText:'Sem classificação'}).locator('strong').innerText()),semDono);
+  await page.locator('#stock-kind').selectOption('SEM');assert.equal(await page.locator(`[data-history="${m.id}"]`).count(),0);
+  await page.unrouteAll();await page.locator('#refresh').click();await page.locator(`#stock-owner option[value="${e.id}"]`).waitFor({state:'attached'});
+}));

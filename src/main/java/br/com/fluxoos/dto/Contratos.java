@@ -9,17 +9,17 @@ import java.util.List;
 public final class Contratos {
     private Contratos() {}
     public record MaterialView(long id, String codigo, String nome, String unidade, int quantidade,
-                               int quantidadeMinima, boolean ativo, boolean abaixoDoMinimo) {
+                               int quantidadeMinima, boolean ativo, boolean abaixoDoMinimo, String referenciaFabricante, Long estoqueId) {
         public static MaterialView de(Material m) {
             return new MaterialView(m.getId(), m.getCodigo(), m.getNome(), m.getUnidade(), m.getQuantidade(),
-                    m.getQuantidadeMinima(), m.isAtivo(), m.isAbaixoDoMinimo());
+                    m.getQuantidadeMinima(), m.isAtivo(), m.isAbaixoDoMinimo(), m.getReferenciaFabricante(), m.getEstoqueId());
         }
     }
     public record MovimentoView(long id, long materialId, long usuarioId, Long ordemId, TipoMovimento tipo,
-                                int variacao, int saldoApos, String observacao, Instant criadoEm) {
+                                int variacao, int saldoApos, String observacao, Instant criadoEm, Long estoqueId) {
         public static MovimentoView de(MovimentoEstoque m) {
             return new MovimentoView(m.getId(), m.getMaterialId(), m.getUsuarioId(), m.getOrdemServicoId(),
-                    m.getTipoMovimento(), m.getVariacao(), m.getSaldoApos(), m.getObservacao(), m.getCriadoEm());
+                    m.getTipoMovimento(), m.getVariacao(), m.getSaldoApos(), m.getObservacao(), m.getCriadoEm(), m.getEstoqueId());
         }
     }
     public record AuditoriaView(long id, Long ordemId, Long usuarioId, String tipo, String detalhes, Instant criadoEm) {
@@ -52,7 +52,14 @@ public final class Contratos {
     }
     public record Consumo(@Positive long materialId, @Positive int quantidade, @NotBlank @Size(max=500) String observacao) {}
     public record NovoMaterial(@NotBlank @Size(max=60) String codigo, @NotBlank @Size(max=160) String nome,
-                        @NotBlank @Size(max=20) String unidade, @PositiveOrZero int minimo) {}
+                        @NotBlank @Size(max=20) String unidade, @PositiveOrZero int minimo, @Positive Long estoqueId) {}
+    public record NovoEstoque(@NotBlank @Size(max=60) String codigo, @NotBlank @Size(max=160) String nome,
+                             @NotNull TipoEstoque tipo) {}
+    public record EstoqueView(long id, String codigo, String nome, TipoEstoque tipo) {
+        public static EstoqueView de(Estoque e) { return new EstoqueView(e.getId(), e.getCodigo(), e.getNome(), e.getTipo()); }
+    }
+    public record ClassificacaoEstoque(@NotNull @Positive Long estoqueId,
+                                      @NotEmpty @Size(max=500) List<@NotNull @Positive Long> materialIds) {}
     public record Movimento(@NotNull TipoMovimento tipo, @NotNull Integer variacao, @NotBlank @Size(max=500) String observacao) {}
     public record Status(@NotNull Boolean ativo) {}
     public record NovoUsuario(@NotBlank @Size(max=80) String login, @NotBlank @Size(max=160) String nome,
@@ -62,14 +69,14 @@ public final class Contratos {
     public record UsuarioView(long id, String login, String nome, Perfil perfil, boolean ativo) {
         public static UsuarioView de(Usuario u) { return new UsuarioView(u.getId(), u.getNomeUsuario(), u.getNomeCompleto(), u.getPerfil(), u.isAtivo()); }
     }
-    public record ItemView(long materialId, String nome, String unidade, int quantidade) {}
+    public record ItemView(long materialId, String nome, String unidade, int quantidade, Long estoqueId) {}
     public record OrdemView(long id, String solicitante, String local, String problema, Prioridade prioridade, Situacao situacao,
                      Long tecnicoId, String relato, String responsavel, boolean assinada, Instant assinadoEm, List<ItemView> itens) {
         public static OrdemView de(OrdemServico o) {
             return new OrdemView(o.getId(), o.getSolicitante(), o.getLocal(), o.getProblema(), o.getPrioridade(), o.getSituacao(),
                     o.getEquipeResponsavelId(), o.getRelatoServico(), o.getNomeResponsavel(), o.getReferenciaAssinatura() != null,
                     o.getAssinadoEm(), o.getItens().stream().map(i -> new ItemView(i.getMaterial().getId(), i.getMaterial().getNome(),
-                    i.getMaterial().getUnidade(), i.getQuantidadeUsada())).toList());
+                    i.getMaterial().getUnidade(), i.getQuantidadeUsada(), i.getEstoqueId())).toList());
         }
     }
 }

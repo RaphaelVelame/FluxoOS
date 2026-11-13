@@ -24,6 +24,15 @@ public class OperacaoController {
 
     @GetMapping("/usuarios") public List<UsuarioView> usuarios() { return usuarios.listar(); }
     @GetMapping("/materiais") public List<MaterialView> materiais() { return estoque.listar(); }
+    @GetMapping("/estoques") public List<EstoqueView> estoques() { return estoque.listarEstoques(); }
+    @PostMapping("/estoques") @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
+    public EstoqueView cadastrarEstoque(@Valid @RequestBody NovoEstoque e, HttpServletRequest req) {
+        return EstoqueView.de(estoque.cadastrarEstoque(ProtecaoHttp.usuario(req), e.codigo(), e.nome(), e.tipo()));
+    }
+    @PatchMapping("/materiais/estoque")
+    public Map<String,Integer> classificar(@Valid @RequestBody ClassificacaoEstoque e, HttpServletRequest req) {
+        return Map.of("classificados", estoque.classificar(ProtecaoHttp.usuario(req), e.estoqueId(), e.materialIds()));
+    }
     @GetMapping("/ordens") public List<OrdemView> ordens() { return ordens.listar(); }
     @GetMapping("/ordens/{id}") public OrdemView ordem(@PathVariable long id) { return ordens.buscar(id); }
     @GetMapping("/ordens/{id}/historico")
@@ -62,7 +71,7 @@ public class OperacaoController {
     }
     @PostMapping("/materiais") @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
     public MaterialView cadastrar(@Valid @RequestBody NovoMaterial e, HttpServletRequest req) {
-        return MaterialView.de(estoque.cadastrar(ProtecaoHttp.usuario(req), e.codigo(), e.nome(), e.unidade(), e.minimo()));
+        return MaterialView.de(estoque.cadastrar(ProtecaoHttp.usuario(req), e.codigo(), e.nome(), e.unidade(), e.minimo(), e.estoqueId()));
     }
     @PostMapping("/materiais/{id}/movimentos") public Map<String, Long> movimentar(@PathVariable long id, @Valid @RequestBody Movimento e,
             @RequestHeader("Idempotency-Key") String chave, HttpServletRequest req) {

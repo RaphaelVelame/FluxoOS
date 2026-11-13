@@ -5,7 +5,7 @@ import { ordens, detalheOrdem, novaOrdem } from './views/orders.js';
 import { estoque } from './views/inventory.js';
 import { equipe, conta } from './views/team.js';
 
-const estado = { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [] };
+const estado = { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [], estoques: [] };
 let sincronizacaoPendente = null;
 let sincronizando = null;
 const navegacao = [['inicio', 'Visão geral', 'grid'], ['ordens', 'Ordens de serviço', 'clipboard'], ['estoque', 'Estoque', 'box'], ['equipe', 'Equipe', 'users']];
@@ -14,6 +14,11 @@ const contexto = {
   get gestor() { return estado.usuario?.ativo && ['CHEFE', 'SUPORTE_TI'].includes(estado.usuario.perfil); },
   get chefe() { return estado.usuario?.perfil === 'CHEFE'; },
   nomeUsuario: id => estado.usuarios.find(u => u.id === id)?.nome || 'Não designado',
+  nomeEstoque: id => {
+    if (id == null) return 'Sem classificação';
+    const e = estado.estoques.find(e => e.id === id);
+    return e ? `${e.tipo === 'CLIENTE' ? 'Cliente' : 'Empresa'} · ${e.nome}` : `Estoque #${id}`;
+  },
   iniciais: id => (estado.usuarios.find(u => u.id === id)?.nome || '?').split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join(''),
   atualizar, pagina, encerrar, aposGravar,
   novaOrdem: () => novaOrdem(contexto),
@@ -21,10 +26,10 @@ const contexto = {
 
 async function atualizar() {
   const usuario = estado.usuario;
-  const [ordens, materiais, usuarios, movimentos] = await Promise.all([
-    api('/ordens'), api('/materiais'), api('/usuarios'), api('/movimentos'),
+  const [ordens, materiais, usuarios, movimentos, estoques] = await Promise.all([
+    api('/ordens'), api('/materiais'), api('/usuarios'), api('/movimentos'), api('/estoques'),
   ]);
-  if (usuario === estado.usuario) Object.assign(estado, { ordens, materiais, usuarios, movimentos });
+  if (usuario === estado.usuario) Object.assign(estado, { ordens, materiais, usuarios, movimentos, estoques });
 }
 
 function mostrarPendencia(carregando = false) {
@@ -143,7 +148,7 @@ function encerrar() {
   sincronizacaoPendente = null;
   sincronizando = null;
   salvarCsrf(null);
-  Object.assign(estado, { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [] });
+  Object.assign(estado, { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [], estoques: [] });
   location.hash = 'inicio';
   login();
 }

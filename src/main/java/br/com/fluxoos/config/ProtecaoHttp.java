@@ -19,6 +19,7 @@ import java.util.Set;
 public class ProtecaoHttp extends OncePerRequestFilter {
     public static final String COOKIE = "fluxoos_sessao";
     static final String ATRIBUTO_USUARIO = "fluxoos.usuario";
+    private static final int LIMITE_CORPO = 300_000;
     private final SessaoService sessoes;
     private final HttpFirewall firewall;
 
@@ -62,7 +63,7 @@ public class ProtecaoHttp extends OncePerRequestFilter {
             return;
         }
         res.setHeader("Cache-Control", "no-store");
-        if (req.getContentLengthLong() > 300_000) {
+        if (req.getContentLengthLong() > LIMITE_CORPO) {
             erro(res, 413, "Requisição muito grande.");
             return;
         }
@@ -75,6 +76,13 @@ public class ProtecaoHttp extends OncePerRequestFilter {
                 return;
             }
         }
+        // Content-Length pode faltar (chunked). Ler no maximo limite + 1 antes do JSON.
+        byte[] corpo = req.getInputStream().readNBytes(LIMITE_CORPO + 1);
+        if (corpo.length > LIMITE_CORPO) {
+            erro(res, 413, "Requisição muito grande.");
+            return;
+        }
+        req = new RequisicaoComCorpo(req, corpo);
         if (path.equals("/api/auth/login") && req.getMethod().equals("POST")) {
             chain.doFilter(req, res);
             return;

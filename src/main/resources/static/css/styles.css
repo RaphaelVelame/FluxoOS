@@ -984,6 +984,29 @@ input[type=checkbox] {
   color:var(--text)
 }
 
+.ownership-panel { margin-bottom:20px; padding:20px }
+.ownership-panel .section-header { padding:0; margin-bottom:18px }
+.ownership-counts { display:flex; flex-wrap:wrap; gap:12px 24px; color:var(--muted); font-size:12px; margin-bottom:18px }
+.ownership-counts strong { color:var(--text); margin-left:5px }
+.ownership-filters { display:grid; grid-template-columns:1fr 2fr; gap:16px }
+.ownership-filters label { min-width:0 }
+.ownership-selection { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:14px }
+.ownership-selection[hidden] { display:none }
+.ownership-selection>.check-filter { white-space:normal }
+.ownership-card { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:-10px 0 18px }
+.owner-badge { font-size:11px; line-height:1.5; padding:5px 8px; border-radius:6px; overflow-wrap:anywhere; max-width:100% }
+.owner-company { color:#37634c; background:#edf5ed }
+.owner-client { color:#325b7a; background:#edf3f8 }
+.owner-empty { color:#8b642d; background:#fff7e8 }
+.owner-select { margin-left:auto }
+.item-owner { display:block; font-size:11px; color:var(--muted); margin-top:4px }
+.ownership-card>.text-button { flex-basis:100%; text-align:left; font-size:11px }
+@media(max-width:600px) {
+  .ownership-filters { grid-template-columns:1fr }
+  .ownership-panel .section-header { align-items:flex-start; gap:12px; flex-wrap:wrap }
+  .ownership-selection>.button { width:100% }
+}
+
 .warning-text {
   color:#ad7a42
 }

@@ -3,6 +3,7 @@ package br.com.fluxoos.service;
 import br.com.fluxoos.dto.Contratos.*;
 import br.com.fluxoos.entity.*;
 import br.com.fluxoos.enums.TipoMovimento;
+import br.com.fluxoos.enums.TipoEstoque;
 import br.com.fluxoos.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,15 +22,17 @@ public class EstoqueService {
     private final MovimentoEstoqueRepository movimentos;
     private final RequisicaoProcessadaRepository requisicoes;
     private final AuditoriaService auditoria;
+    private final EstoqueRepository estoques;
 
     public EstoqueService(MaterialRepository materiais, OrdemServicoRepository ordens,
                           MovimentoEstoqueRepository movimentos, RequisicaoProcessadaRepository requisicoes,
-                          AuditoriaService auditoria) {
+                          AuditoriaService auditoria, EstoqueRepository estoques) {
         this.materiais = materiais;
         this.ordens = ordens;
         this.movimentos = movimentos;
         this.requisicoes = requisicoes;
         this.auditoria = auditoria;
+        this.estoques = estoques;
     }
 
     @Transactional(readOnly = true)
@@ -43,10 +46,52 @@ public class EstoqueService {
     }
 
     public Material cadastrar(Usuario ator, String codigo, String nome, String unidade, int minimo) {
+        return cadastrar(ator, codigo, nome, unidade, minimo, null);
+    }
+
+    public Material cadastrar(Usuario ator, String codigo, String nome, String unidade, int minimo, Long estoqueId) {
         OrdemServicoService.exigirGestor(ator);
-        Material material = materiais.save(new Material(codigo, nome, unidade, 0, minimo, true));
+        if (estoqueId != null) carregarEstoque(estoqueId);
+        Material material = materiais.save(new Material(codigo, nome, unidade, 0, minimo, true, estoqueId));
         auditoria.registrar(null, ator.getId(), "MATERIAL_CRIADO", "Material cadastrado: " + material.getCodigo());
         return material;
+    }
+
+    @Transactional(readOnly = true)
+    public List<EstoqueView> listarEstoques() {
+        return estoques.findAllByOrderByNomeAsc().stream().map(EstoqueView::de).toList();
+    }
+
+    public Estoque cadastrarEstoque(Usuario ator, String codigo, String nome, TipoEstoque tipo) {
+        OrdemServicoService.exigirGestor(ator);
+        Estoque estoque = estoques.save(new Estoque(codigo, nome, tipo));
+        auditoria.registrar(null, ator.getId(), "ESTOQUE_CRIADO", "Estoque cadastrado: " + estoque.getCodigo() + " (" + tipo + ").");
+        return estoque;
+    }
+
+    public int classificar(Usuario ator, long estoqueId, List<Long> ids) {
+        OrdemServicoService.exigirGestor(ator);
+        Estoque destino = carregarEstoque(estoqueId);
+        if (ids == null || ids.isEmpty() || ids.size() > 500 || ids.stream().anyMatch(id -> id == null || id <= 0)) {
+            throw new IllegalArgumentException("Selecione de 1 a 500 materiais válidos.");
+        }
+        int classificados = 0;
+        // Ordem fixa de locks; repetir a mesma classificacao e uma operacao sem efeito adicional.
+        for (long id : ids.stream().distinct().sorted().toList()) {
+            Material material = carregarMaterial(id);
+            if (material.classificarEstoque(estoqueId)) {
+                auditoria.registrar(null, ator.getId(), "MATERIAL_CLASSIFICADO",
+                        "Material " + material.getCodigo() + " vinculado ao estoque " + destino.getCodigo()
+                                + " (materialId=" + id + ", estoqueId=" + estoqueId + "). Saldo: "
+                                + material.getQuantidade() + " " + material.getUnidade() + ". Movimentos anteriores preservados.");
+                classificados++;
+            }
+        }
+        return classificados;
+    }
+
+    private Estoque carregarEstoque(long id) {
+        return estoques.findById(id).orElseThrow(() -> new NaoEncontradoException("Estoque não encontrado."));
     }
 
     public long movimentar(Usuario ator, long materialId, TipoMovimento tipo, int variacao, String observacao, String chave) {

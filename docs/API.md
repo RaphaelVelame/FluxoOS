@@ -24,8 +24,11 @@ Base: `/api`. JSON UTF-8. Erros retornam `{"mensagem":"Descrição"}`. A interfa
 | POST | `/ordens/{id}/conclusao` | `responsavel`, `assinatura` (data URL PNG) |
 | GET | `/ordens/{id}/historico` | Auditoria da OS |
 | GET | `/ordens/{id}/assinatura` | PNG autenticado |
-| GET | `/materiais` | Saldos e alertas |
-| POST | `/materiais` | `codigo`, `nome`, `unidade`, `minimo`; saldo inicial zero |
+| GET | `/materiais` | Saldos, alertas e `referenciaFabricante` (opcional, preenchida na importação) |
+| GET | `/estoques` | Cadastros de estoques: `id`, `codigo`, `nome`, `tipo` (`EMPRESA`/`CLIENTE`) |
+| POST | `/estoques` | `codigo`, `nome`, `tipo`; exige chefia ou suporte TI |
+| POST | `/materiais` | `codigo`, `nome`, `unidade`, `minimo`, `estoqueId`; saldo inicial zero |
+| PATCH | `/materiais/estoque` | `estoqueId`, `materialIds` (1–500); classifica materiais ainda sem proprietário |
 | PATCH | `/materiais/{id}/status` | `ativo` booleano |
 | POST | `/materiais/{id}/movimentos` | `tipo`, `variacao`, `observacao` |
 | GET | `/movimentos` | Histórico do estoque |
@@ -33,7 +36,24 @@ Base: `/api`. JSON UTF-8. Erros retornam `{"mensagem":"Descrição"}`. A interfa
 
 Prioridade: `BAIXA`, `MEDIA`, `ALTA`. Perfil: `CHEFE`, `SUPORTE_TI`, `TECNICO`, `SOLICITANTE`. Movimentos manuais: `ENTRADA`, `DEVOLUCAO`, `AJUSTE`. Ajuste recebe a **diferença**, por exemplo `-3`, não o saldo final. `SAIDA` é gerada apenas no consumo em OS.
 
+Materiais, movimentos e itens de OS retornam `estoqueId`. Nos movimentos/itens, esse valor identifica
+o estoque na época do registro; não é recalculado quando um material antigo é classificado.
+`null` significa propriedade ainda não identificada. Consulte `/estoques` para o nome e o tipo.
+O cadastro pela interface exige escolher um estoque. A API ainda aceita omitir `estoqueId` para
+compatibilidade com integrações antigas; o material ficará sem classificação e poderá ser vinculado
+depois. Uma referência informada precisa existir (404 se ausente, 400 se inválida).
+
+`PATCH /materiais/estoque` exige chefia ou suporte TI e retorna `{"classificados":N}`. A transação
+preserva saldo, movimentos e itens antigos, registra auditoria e cancela o lote inteiro se um material
+não existir ou já pertencer a outro estoque. IDs repetidos são considerados uma vez; reenviar o mesmo
+vínculo retorna zero alterações e não duplica auditoria. Trocar o proprietário de material já
+classificado exige um fluxo de transferência, que não faz parte desta operação.
+
 Status: 200 sucesso, 201 criação, 400 entrada inválida, 401 sem sessão/login recusado, 403 sem permissão/CSRF, 404 ausente, 409 conflito de estado/duplicidade, 413 requisição grande, 500 erro interno sem detalhes sensíveis. Todas as permissões estão na tabela do README.
+
+Rotas inexistentes retornam 404; método HTTP incompatível retorna 405 com `Allow`, tipo de corpo
+não suportado retorna 415, e identificador não numérico retorna 400. O limite do corpo da API é
+300.000 bytes, inclusive em requisições sem `Content-Length` (envio em blocos); exceder retorna 413.
 
 Desativar uma conta invalida todas as suas sessões anteriores. Reativar permite novo login e mantém os cookies antigos inválidos (401), inclusive quando um dispositivo não fez requisições durante a desativação. A invalidação acompanha o commit da alteração; rollback não encerra sessões de uma conta cuja alteração foi revertida.
 
