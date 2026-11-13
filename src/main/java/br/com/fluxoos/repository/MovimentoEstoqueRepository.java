@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface MovimentoEstoqueRepository extends JpaRepository<MovimentoEstoque, Long> {
     List<MovimentoEstoque> findAllByOrderByIdDesc();
+    List<MovimentoEstoque> findByEmpresaIdOrderByIdDesc(long empresaId);
 }

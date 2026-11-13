@@ -66,17 +66,17 @@ public final class Contratos {
                        @NotNull Perfil perfil, @NotBlank @Size(min=15,max=1024) String senha) {
         @Override public String toString() { return "NovoUsuario[credenciais=PROTEGIDAS]"; }
     }
-    public record UsuarioView(long id, String login, String nome, Perfil perfil, boolean ativo) {
-        public static UsuarioView de(Usuario u) { return new UsuarioView(u.getId(), u.getNomeUsuario(), u.getNomeCompleto(), u.getPerfil(), u.isAtivo()); }
+    public record UsuarioView(long id, String login, String nome, Perfil perfil, boolean ativo, Long empresaId, java.util.Set<Role> roles) {
+        public static UsuarioView de(Usuario u) { return new UsuarioView(u.getId(), u.getNomeUsuario(), u.getNomeCompleto(), u.getPerfil(), u.isAtivo(), u.getEmpresaId(), u.getRoles()); }
     }
     public record ItemView(long materialId, String nome, String unidade, int quantidade, Long estoqueId) {}
     public record OrdemView(long id, String solicitante, String local, String problema, Prioridade prioridade, Situacao situacao,
-                     Long tecnicoId, String relato, String responsavel, boolean assinada, Instant assinadoEm, List<ItemView> itens) {
+                     Long tecnicoId, String relato, String responsavel, boolean assinada, Instant assinadoEm, List<ItemView> itens, Long empresaId) {
         public static OrdemView de(OrdemServico o) {
             return new OrdemView(o.getId(), o.getSolicitante(), o.getLocal(), o.getProblema(), o.getPrioridade(), o.getSituacao(),
                     o.getEquipeResponsavelId(), o.getRelatoServico(), o.getNomeResponsavel(), o.getReferenciaAssinatura() != null,
                     o.getAssinadoEm(), o.getItens().stream().map(i -> new ItemView(i.getMaterial().getId(), i.getMaterial().getNome(),
-                    i.getMaterial().getUnidade(), i.getQuantidadeUsada(), i.getEstoqueId())).toList());
+                    i.getMaterial().getUnidade(), i.getQuantidadeUsada(), i.getEstoqueId())).toList(), o.getEmpresaId());
         }
     }
 }

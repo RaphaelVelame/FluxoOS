@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Set;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
 @Component
 public class ProtecaoHttp extends OncePerRequestFilter {
@@ -95,7 +97,11 @@ public class ProtecaoHttp extends OncePerRequestFilter {
             catch (SecurityException e) { erro(res, 403, "Validação de segurança recusada. Entre novamente."); return; }
         }
         req.setAttribute(ATRIBUTO_USUARIO, usuario);
-        chain.doFilter(req, res);
+        var contexto = SecurityContextHolder.createEmptyContext();
+        contexto.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(usuario, null, usuario.getAuthorities()));
+        SecurityContextHolder.setContext(contexto);
+        try { chain.doFilter(req, res); }
+        finally { SecurityContextHolder.clearContext(); }
     }
 
     public static String token(HttpServletRequest req) {

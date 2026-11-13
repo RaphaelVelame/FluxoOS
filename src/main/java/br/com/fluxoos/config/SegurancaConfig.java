@@ -10,10 +10,36 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import java.time.Clock;
 import java.time.Duration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 
 @Configuration
 @EnableScheduling
+@EnableMethodSecurity
 public class SegurancaConfig {
+    @Bean org.springframework.security.core.userdetails.UserDetailsService userDetailsService(UsuarioRepository usuarios) {
+        return login -> usuarios.findByNomeUsuario(login).orElseThrow(() ->
+                new org.springframework.security.core.userdetails.UsernameNotFoundException("Credenciais recusadas."));
+    }
+    @Bean SecurityFilterChain api(HttpSecurity http, ProtecaoHttp protecao) throws Exception {
+        // CSRF e sessoes sao validados pelo filtro existente; nao ha Basic/form login nem HttpSession.
+        return http.csrf(c -> c.disable()).formLogin(c -> c.disable()).httpBasic(c -> c.disable())
+                .logout(c -> c.disable()).requestCache(c -> c.disable())
+                .sessionManagement(c -> c.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(c -> c.requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers("/api", "/api/**").authenticated().anyRequest().permitAll())
+                .addFilterBefore(protecao, AnonymousAuthenticationFilter.class)
+                .build();
+    }
+    @Bean FilterRegistrationBean<ProtecaoHttp> registroFiltro(ProtecaoHttp filtro) {
+        var registro = new FilterRegistrationBean<>(filtro);
+        registro.setEnabled(false); // Executar uma unica vez, dentro da cadeia Spring Security.
+        return registro;
+    }
     @Bean Clock clock() { return Clock.systemUTC(); }
     @Bean LimitadorTentativas limitador(
             @Value("${fluxoos.seguranca.erros-usuario:5}") int errosUsuario,

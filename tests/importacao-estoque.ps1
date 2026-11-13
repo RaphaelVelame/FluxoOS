@@ -86,6 +86,7 @@ try {
     $hashTeste = 'pbkdf2_sha256$600000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     $estrutura += @"
 INSERT INTO usuarios(id,nome_usuario,nome_completo,perfil,ativo,hash_senha) VALUES(1,'teste','Teste','CHEFE',true,'$hashTeste');
+INSERT INTO usuario_roles(usuario_id,role) VALUES(1,'ROLE_ADMIN_EMPRESA');
 INSERT INTO materiais(id,codigo,nome,unidade,quantidade,quantidade_minima,ativo) VALUES(2,'PRESERVAR','Existente','un',10,0,true);
 "@
     Invoke-FluxoOsSql $db $estrutura | Out-Null

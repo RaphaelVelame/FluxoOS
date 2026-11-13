@@ -11,6 +11,7 @@ class ContratosTest {
         assertThat(new Contratos.Login("admin", segredo).toString()).doesNotContain(segredo);
         assertThat(new Contratos.NovaSenha(segredo, segredo).toString()).doesNotContain(segredo);
         assertThat(new Contratos.NovoUsuario("login", "Nome", Perfil.CHEFE, segredo).toString()).doesNotContain(segredo);
+        assertThat(new CriarUsuarioDTO("login", "Nome", java.util.Set.of(br.com.fluxoos.enums.Role.ROLE_ESTOQUISTA), segredo, null).toString()).doesNotContain(segredo);
         assertThat(new Contratos.Conclusao("Nome", segredo).toString()).doesNotContain(segredo);
         assertThat(new Contratos.AcessoView(null, segredo, Instant.now()).toString()).doesNotContain(segredo);
     }

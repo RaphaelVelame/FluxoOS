@@ -22,12 +22,15 @@ public class CargaInicial implements ApplicationRunner {
     private final SenhaPbkdf2 hasher;
     private final String senha;
     private final boolean demo;
+    private final boolean master;
 
     public CargaInicial(UsuarioRepository usuarios, EstoqueService estoque, OrdemServicoService ordens,
                         AuditoriaService auditoria, SenhaPbkdf2 hasher,
-                        @Value("${fluxoos.bootstrap-password}") String senha, @Value("${fluxoos.demo}") boolean demo) {
+                        @Value("${fluxoos.bootstrap-password}") String senha, @Value("${fluxoos.demo}") boolean demo,
+                        @Value("${fluxoos.bootstrap-admin-master:false}") boolean master) {
         this.usuarios = usuarios; this.estoque = estoque; this.ordens = ordens; this.auditoria = auditoria;
         this.hasher = hasher; this.senha = senha; this.demo = demo;
+        this.master = master;
     }
 
     @Override @Transactional
@@ -39,7 +42,10 @@ public class CargaInicial implements ApplicationRunner {
         char[] segredo = senha.toCharArray();
         String hash;
         try { hash = hasher.gerarHash(segredo); } finally { Arrays.fill(segredo, '\0'); }
-        Usuario chefe = usuarios.save(new Usuario("admin", "Administrador", Perfil.CHEFE, hash));
+        if (master && demo) throw new IllegalStateException("Bootstrap master não admite carga demo.");
+        Usuario chefe = usuarios.save(master
+                ? new Usuario("admin", "Administrador da plataforma", null, java.util.Set.of(Role.ROLE_ADMIN_MASTER), hash)
+                : new Usuario("admin", "Administrador", Perfil.CHEFE, hash));
         auditoria.registrar(null, chefe.getId(), "INICIALIZACAO", "Conta administrativa inicial criada.");
         if (!demo) return;
         Usuario tecnico = usuarios.save(new Usuario("tecnico", "Marcos Oliveira", Perfil.TECNICO, hash));

@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 
 @Entity
 @Table(name = "materiais")
-public class Material {
+public class Material extends RegistroEmpresa {
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "material_ids")
     @SequenceGenerator(name = "material_ids", sequenceName = "sequencia_ids", allocationSize = 1)
@@ -45,6 +45,10 @@ public class Material {
     }
 
     public long getId() { return id; }
+    public Material(long empresaId, String codigo, String nome, String unidade, int minimo, Long estoqueId) {
+        this(codigo, nome, unidade, 0, minimo, true, estoqueId);
+        vincularEmpresa(empresaId);
+    }
     public String getCodigo() { return codigo; }
     public String getNome() { return nome; }
     public String getUnidade() { return unidade; }

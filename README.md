@@ -50,14 +50,21 @@ Após a criação da conta, remova a variável de senha do ambiente. Para mudar 
 
 Por padrão, a aplicação admite 20 sessões ativas no total por instância. Cinco erros por usuário em 15 minutos bloqueiam novos logins por cinco minutos; há proteção adicional por IP e descarte automático dos registros antigos. A 21ª sessão é recusada sem encerrar as existentes. Consulte [configuração e operação](docs/OPERACAO.md) e [testes da correção](docs/CORRECAO_LIMITES_2026-11-11.md).
 
-| Operação | Chefia | Suporte TI | Técnico | Solicitante |
-| --- | :---: | :---: | :---: | :---: |
-| Consultar ordens, estoque e diretório da equipe | Sim | Sim | Sim | Sim |
-| Abrir OS e atribuir técnico | Sim | Sim | Não | Não |
-| Atender, relatar, consumir e concluir OS | Sim | Sim | Apenas quando designado | Não |
-| Cadastrar/movimentar/desativar material | Sim | Sim | Não | Não |
-| Criar/desativar contas e consultar eventos de segurança | Sim | Não | Não | Não |
-| Trocar a própria senha | Sim | Sim | Sim | Sim |
+As funções são acumuláveis (`Set<Role>`), e as consultas operacionais usam a empresa do usuário
+autenticado. [Contrato SaaS, migrations e exemplos](docs/SAAS_RBAC_2026-11-13.md).
+
+| Operação | Funções autorizadas |
+| --- | --- |
+| Abrir OS | ADMIN_EMPRESA, SUPERVISOR ou SUPORTE_TECNICO |
+| Atribuir técnico | ADMIN_EMPRESA; destino com SUPORTE_TECNICO ou SUPORTE_EXTERNO da mesma empresa |
+| Atender, relatar, consumir e concluir OS | ADMIN_EMPRESA ou suporte técnico/externo designado |
+| Cadastrar, movimentar e classificar materiais | ADMIN_EMPRESA ou ESTOQUISTA |
+| Criar/editar funcionários | ADMIN_EMPRESA; concede somente as quatro funções operacionais |
+| Provisionar empresas e administradores | ADMIN_MASTER, por API de plataforma |
+| Consultar notificações de novas OS | ADMIN_EMPRESA destinatário |
+
+Todos os nomes acima têm o prefixo `ROLE_` na API. As permissões de funções acumuladas se somam.
+Contas SOLICITANTE legadas mantêm somente consulta na empresa legada até reclassificação.
 
 Essas verificações ocorrem no servidor. Não é possível iniciar atendimento sem técnico designado, consumir material inativo ou sem saldo, registrar duas vezes o mesmo material na OS, nem alterar uma OS concluída. Correções de consumo ainda requerem um fluxo específico; devoluções manuais ficam no histórico do estoque.
 

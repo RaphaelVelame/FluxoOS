@@ -1,6 +1,9 @@
 export const escape = valor => String(valor ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const numero = valor => new Intl.NumberFormat('pt-BR').format(valor);
 export const data = valor => valor ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(valor)) : '—';
+export const funcoes = { ROLE_ADMIN_MASTER: 'Admin master', ROLE_ADMIN_EMPRESA: 'Administrador da empresa', ROLE_SUPERVISOR: 'Supervisor', ROLE_SUPORTE_TECNICO: 'Suporte técnico', ROLE_SUPORTE_EXTERNO: 'Suporte externo', ROLE_ESTOQUISTA: 'Estoquista' };
+export const nomesFuncoes = u => u.roles?.length ? u.roles.map(r => funcoes[r] || r).join(' · ') : 'Consulta legada';
+export const temFuncao = (u, ...roles) => !!u?.ativo && roles.some(r => u.roles?.includes(r));
 export const perfis = { CHEFE: 'Chefia', SUPORTE_TI: 'Suporte de TI', TECNICO: 'Técnico', SOLICITANTE: 'Solicitante' };
 export const situacoes = { ABERTA: 'Aberta', EM_ANDAMENTO: 'Em andamento', CONCLUIDA: 'Concluída' };
 export const prioridades = { BAIXA: 'Baixa', MEDIA: 'Média', ALTA: 'Alta' };

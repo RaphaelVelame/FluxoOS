@@ -12,6 +12,8 @@ public class ItemOS {
     private int quantidadeUsada;
     @Column(name = "estoque_id")
     private Long estoqueId;
+    @Column(name = "empresa_id", nullable = false)
+    private Long empresaId;
 
     protected ItemOS() {}
 
@@ -19,6 +21,7 @@ public class ItemOS {
         this.material = Objects.requireNonNull(material, "Material obrigatório.");
         this.quantidadeUsada = Validacoes.positivo(quantidadeUsada, "Quantidade usada");
         this.estoqueId = material.getEstoqueId();
+        this.empresaId = material.getEmpresaId();
     }
 
     public Material getMaterial() { return material; }

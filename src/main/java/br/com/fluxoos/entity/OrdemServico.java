@@ -9,7 +9,7 @@ import java.util.Objects;
 
 @Entity
 @Table(name = "ordens")
-public class OrdemServico {
+public class OrdemServico extends RegistroEmpresa {
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "ordem_ids")
     @SequenceGenerator(name = "ordem_ids", sequenceName = "sequencia_ids", allocationSize = 1)
@@ -66,6 +66,11 @@ public class OrdemServico {
         situacao = Situacao.EM_ANDAMENTO;
     }
 
+    public OrdemServico(long empresaId, String solicitante, String local, String problema, Prioridade prioridade) {
+        this(solicitante, local, problema, prioridade);
+        vincularEmpresa(empresaId);
+    }
+
     public void identificarAbertura(long autorId, String chave, String conteudo) {
         if (id != null || chaveAbertura != null) throw new IllegalStateException("Abertura já identificada.");
         autorAberturaId = autorId;
@@ -94,10 +99,11 @@ public class OrdemServico {
     }
 
     public void atribuirEquipe(Usuario gestor, Usuario tecnico) {
-        if (gestor == null || !gestor.podeMovimentarEstoque()) {
-            throw new SecurityException("Somente chefia ou suporte de TI pode atribuir equipe.");
+        if (gestor == null || !gestor.temRole(Role.ROLE_ADMIN_EMPRESA) || !Objects.equals(getEmpresaId(), gestor.getEmpresaId())) {
+            throw new SecurityException("Somente o administrador da empresa pode atribuir equipe.");
         }
-        if (tecnico == null || !tecnico.isAtivo() || tecnico.getPerfil() != Perfil.TECNICO) {
+        if (tecnico == null || !Objects.equals(getEmpresaId(), tecnico.getEmpresaId())
+                || !tecnico.temAlgumaRole(Role.ROLE_SUPORTE_TECNICO, Role.ROLE_SUPORTE_EXTERNO)) {
             throw new IllegalArgumentException("A equipe designada deve ser um técnico ativo.");
         }
         if (situacao == Situacao.CONCLUIDA) {
@@ -109,15 +115,16 @@ public class OrdemServico {
         equipeResponsavelId = tecnico.getId();
     }
     public boolean podeRegistrarUso(Usuario ator) {
-        return ator != null && ator.isAtivo() &&
-                (ator.getPerfil().podeMovimentarEstoque() ||
-                 (ator.getPerfil() == Perfil.TECNICO && equipeResponsavelId != null
+        return ator != null && ator.isAtivo() && Objects.equals(getEmpresaId(), ator.getEmpresaId()) &&
+                (ator.temRole(Role.ROLE_ADMIN_EMPRESA) ||
+                 (ator.temAlgumaRole(Role.ROLE_SUPORTE_TECNICO, Role.ROLE_SUPORTE_EXTERNO) && equipeResponsavelId != null
                   && equipeResponsavelId == ator.getId()));
     }
 
     public void validarInclusaoItem(Material material, int quantidadeUsada) {
         exigirEmAndamento();
         Objects.requireNonNull(material, "Material obrigatório.");
+        if (!Objects.equals(getEmpresaId(), material.getEmpresaId())) throw new IllegalArgumentException("Material de outra empresa.");
         Validacoes.positivo(quantidadeUsada, "Quantidade usada");
         boolean jaExiste = itens.stream()
                 .anyMatch(item -> item.getMaterial().getId() == material.getId());

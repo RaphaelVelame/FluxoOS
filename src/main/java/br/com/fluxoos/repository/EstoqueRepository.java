@@ -6,4 +6,6 @@ import java.util.List;
 
 public interface EstoqueRepository extends JpaRepository<Estoque, Long> {
     List<Estoque> findAllByOrderByNomeAsc();
+    List<Estoque> findByEmpresaIdOrderByNomeAsc(long empresaId);
+    java.util.Optional<Estoque> findByIdAndEmpresaId(long id, long empresaId);
 }

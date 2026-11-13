@@ -45,9 +45,11 @@ class FluxoOperacionalTest {
     @Autowired OrdemServicoService ordens;
     @Autowired EstoqueService estoque;
     @Autowired EstoqueRepository estoquesRepository;
+    @Autowired NotificacaoRepository notificacoes;
     @Autowired org.springframework.transaction.PlatformTransactionManager transacoes;
 
     @BeforeEach void preparar() {
+        notificacoes.deleteAllInBatch();
         requisicoes.deleteAllInBatch();
         movimentos.deleteAllInBatch();
         auditoria.deleteAllInBatch();
@@ -91,7 +93,7 @@ class FluxoOperacionalTest {
         assertThat(finalizada.has("referenciaAssinatura")).isFalse();
         assertThat(finalizada.get("itens")).hasSize(1);
         executar(get("/api/ordens/" + id + "/assinatura").cookie(tecnico.cookie)).andExpect(status().isOk()).andExpect(content().contentType("image/png"));
-        assertThat(ordens.historico(id)).hasSize(6);
+        assertThat(ordens.historico(usuario(1), id)).hasSize(6);
         assertThat(movimentos.findAll()).hasSize(2);
         enviar(post("/api/ordens/" + id + "/inicio"), null, tecnico, 409);
     }
@@ -103,7 +105,7 @@ class FluxoOperacionalTest {
         executar(post("/api/ordens").cookie(tecnico.cookie).contentType("application/json").content("{}"))
                 .andExpect(status().isForbidden());
         enviar(post("/api/ordens"), Map.of("solicitante", "Ana", "local", "Escola", "problema", "Rede", "prioridade", "ALTA"), tecnico, 403);
-        enviar(post("/api/usuarios"), Map.of("login", "nova", "nome", "Nova Pessoa", "perfil", "CHEFE", "senha", SENHA), tecnico, 403);
+        enviar(post("/api/usuarios"), Map.of("login", "nova", "nome", "Nova Pessoa", "roles", List.of("ROLE_ADMIN_MASTER"), "senha", SENHA), tecnico, 403);
         executar(post("/api/auth/logout").cookie(tecnico.cookie).header("X-CSRF-Token", tecnico.csrf).header("Origin", "https://outro.local"))
                 .andExpect(status().isForbidden());
         long id = prepararOrdem();
@@ -119,7 +121,7 @@ class FluxoOperacionalTest {
         JsonNode repetida = enviar(post("/api/ordens").header("Idempotency-Key", chave), corpo, admin, 201);
         assertThat(repetida.get("id")).isEqualTo(primeira.get("id"));
         assertThat(ordensRepository.count()).isEqualTo(1);
-        assertThat(ordens.historico(primeira.get("id").asLong())).hasSize(1);
+        assertThat(ordens.historico(usuario(1), primeira.get("id").asLong())).hasSize(1);
         enviar(post("/api/ordens").header("Idempotency-Key", chave),
                 Map.of("solicitante", "Ana", "local", "Outro local", "problema", "Rede", "prioridade", "ALTA"), admin, 409);
         assertThat(ordensRepository.count()).isEqualTo(1);
@@ -152,7 +154,7 @@ class FluxoOperacionalTest {
         assertThat(ordensRepository.count()).isZero();
         long id = ordens.abrirComChave(admin, "Ana", "Escola", "Rede", Prioridade.ALTA, chave).id();
         assertThat(ordensRepository.count()).isEqualTo(1);
-        assertThat(ordens.historico(id)).hasSize(1);
+        assertThat(ordens.historico(usuario(1), id)).hasSize(1);
     }
 
     @Test void chaveDeAberturaPertenceAoAutor() {
@@ -179,7 +181,7 @@ class FluxoOperacionalTest {
         assertThatThrownBy(() -> estoque.consumir(usuario(2), id, material.getId(), 4, "Uso", chave()))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("insuficiente");
         assertThat(materiais.findById(material.getId()).orElseThrow().getQuantidade()).isEqualTo(3);
-        assertThat(ordens.buscar(id).itens()).isEmpty();
+        assertThat(ordens.buscar(usuario(1), id).itens()).isEmpty();
         assertThat(movimentos.findAll()).isEmpty();
     }
 
@@ -189,7 +191,7 @@ class FluxoOperacionalTest {
         assertThatThrownBy(() -> estoque.consumir(usuario(2), id, material.getId(), 2, "x".repeat(501), chave()))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         assertThat(materiais.findById(material.getId()).orElseThrow().getQuantidade()).isEqualTo(10);
-        assertThat(ordens.buscar(id).itens()).isEmpty();
+        assertThat(ordens.buscar(usuario(1), id).itens()).isEmpty();
         assertThat(movimentos.findAll()).isEmpty();
     }
 
@@ -261,7 +263,7 @@ class FluxoOperacionalTest {
         javax.imageio.ImageIO.write(branco, "png", bytes);
         assertThatThrownBy(() -> ordens.concluir(usuario(2), id, "Ana", "data:image/png;base64," + Base64.getEncoder().encodeToString(bytes.toByteArray())))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThat(ordens.buscar(id).situacao()).isEqualTo(Situacao.EM_ANDAMENTO);
+        assertThat(ordens.buscar(usuario(1), id).situacao()).isEqualTo(Situacao.EM_ANDAMENTO);
     }
 
     @Test void trocaSenhaRevogaSessoesEContaDesativadaPerdeAcesso() throws Exception {
@@ -337,7 +339,7 @@ class FluxoOperacionalTest {
         assertThat(materiais.findById(segundo.getId()).orElseThrow().getQuantidade()).isEqualTo(2);
         assertThat(movimentos.count()).isEqualTo(movimentosAntes);
         assertThat(movimentos.findAll()).extracting(MovimentoEstoque::getEstoqueId).containsOnlyNulls();
-        assertThat(ordens.buscar(os).itens().getFirst().estoqueId()).isNull();
+        assertThat(ordens.buscar(usuario(1), os).itens().getFirst().estoqueId()).isNull();
         long outro = estoque.cadastrarEstoque(admin,"EMPRESA","Matriz",TipoEstoque.EMPRESA).getId();
         assertThatThrownBy(()->estoque.classificar(admin,outro,List.of(aindaLivre.getId(),primeiro.getId())))
                 .isInstanceOf(IllegalStateException.class);

@@ -12,7 +12,12 @@ Base: `/api`. JSON UTF-8. Erros retornam `{"mensagem":"Descrição"}`. A interfa
 | POST | `/auth/logout` | Revoga sessão |
 | POST | `/auth/senha` | `atual`, `nova`; revoga todas as sessões |
 | GET | `/usuarios` | Diretório sem hashes |
-| POST | `/usuarios` | `login`, `nome`, `perfil`, `senha` |
+| POST | `/usuarios` | `login`, `nome`, `roles` (lista não vazia), `senha`; `empresaId` apenas para provisionamento master |
+| PUT | `/usuarios/{id}` | `nome`, `roles`; empresa é imutável; alterações de funções revogam sessões |
+| GET | `/plataforma/empresas` | Somente ADMIN_MASTER; lista empresas |
+| POST | `/plataforma/empresas` | `nome`; somente ADMIN_MASTER |
+| GET | `/notificacoes` | Notificações do ADMIN_EMPRESA autenticado |
+| PATCH | `/notificacoes/{id}/leitura` | Marca somente a própria notificação como lida |
 | PATCH | `/usuarios/{id}/status` | `ativo` booleano |
 | GET | `/ordens` | Listagem de OS |
 | POST | `/ordens` | `solicitante`, `local`, `problema`, `prioridade` |
@@ -34,7 +39,11 @@ Base: `/api`. JSON UTF-8. Erros retornam `{"mensagem":"Descrição"}`. A interfa
 | GET | `/movimentos` | Histórico do estoque |
 | GET | `/seguranca/eventos` | Eventos, apenas chefia |
 
-Prioridade: `BAIXA`, `MEDIA`, `ALTA`. Perfil: `CHEFE`, `SUPORTE_TI`, `TECNICO`, `SOLICITANTE`. Movimentos manuais: `ENTRADA`, `DEVOLUCAO`, `AJUSTE`. Ajuste recebe a **diferença**, por exemplo `-3`, não o saldo final. `SAIDA` é gerada apenas no consumo em OS.
+Prioridade: `BAIXA`, `MEDIA`, `ALTA`. Roles: `ROLE_ADMIN_MASTER`, `ROLE_ADMIN_EMPRESA`,
+`ROLE_SUPERVISOR`, `ROLE_SUPORTE_TECNICO`, `ROLE_SUPORTE_EXTERNO`, `ROLE_ESTOQUISTA`.
+O antigo campo `perfil` não concede permissões. Consulte o [contrato SaaS](SAAS_RBAC_2026-11-13.md).
+Movimentos manuais: `ENTRADA`, `DEVOLUCAO`, `AJUSTE`. Ajuste recebe a **diferença**, por exemplo `-3`,
+não o saldo final. `SAIDA` é gerada apenas no consumo em OS.
 
 Materiais, movimentos e itens de OS retornam `estoqueId`. Nos movimentos/itens, esse valor identifica
 o estoque na época do registro; não é recalculado quando um material antigo é classificado.

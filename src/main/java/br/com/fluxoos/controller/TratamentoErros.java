@@ -26,7 +26,8 @@ public class TratamentoErros {
     @ExceptionHandler(LimiteSessoesException.class) ResponseEntity<?> capacidade(LimiteSessoesException e) { return erro(429, e.getMessage()); }
     @ExceptionHandler(NaoEncontradoException.class) ResponseEntity<?> ausente(RuntimeException e) { return erro(404, e.getMessage()); }
     @ExceptionHandler(AutenticacaoNegadaException.class) ResponseEntity<?> login(RuntimeException e) { return erro(401, e.getMessage()); }
-    @ExceptionHandler(SecurityException.class) ResponseEntity<?> proibido(RuntimeException e) { return erro(403, e.getMessage()); }
+    @ExceptionHandler({SecurityException.class, org.springframework.security.access.AccessDeniedException.class})
+    ResponseEntity<?> proibido(RuntimeException e) { return erro(403, "Sem permissão para esta operação."); }
     @ExceptionHandler(IllegalArgumentException.class) ResponseEntity<?> invalido(RuntimeException e) { return erro(400, e.getMessage()); }
     @ExceptionHandler(IllegalStateException.class) ResponseEntity<?> conflito(RuntimeException e) { return erro(409, e.getMessage()); }
     @ExceptionHandler(DataIntegrityViolationException.class) ResponseEntity<?> duplicado(RuntimeException e) {

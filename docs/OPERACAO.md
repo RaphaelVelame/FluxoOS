@@ -11,6 +11,7 @@
 | `DATABASE_PASSWORD` | vazio no H2 | Senha SQL |
 | `SPRING_PROFILES_ACTIVE` | vazio | Use `postgres` para PostgreSQL |
 | `BOOTSTRAP_PASSWORD` | vazio | Obrigatória somente em banco sem usuários |
+| `BOOTSTRAP_ADMIN_MASTER` | `false` | Em banco vazio e sem demo, cria master global em vez do administrador da empresa legada; não promove contas existentes |
 | `DEMO_DATA` | `false` | Carga demonstrativa somente em banco vazio |
 | `COOKIE_SECURE` | `false` local / `true` postgres | Cookie somente por HTTPS |
 | `MAX_SESSOES` | `20` | Sessões ativas no total por JVM; excedente recebe 429 |

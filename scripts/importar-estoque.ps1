@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Planilha,
     [switch]$Validar,
-    [string]$SqlSaida
+    [string]$SqlSaida,
+    [ValidateRange(1,[long]::MaxValue)][long]$EmpresaId = 1
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ambiente.ps1')
@@ -180,11 +181,14 @@ DECLARE
     saldo integer;
     origem text;
 BEGIN
-    IF EXISTS (SELECT 1 FROM auditoria WHERE tipo = 'IMPORTACAO_ESTOQUE' AND detalhes = '$hash') THEN
+    IF EXISTS (SELECT 1 FROM auditoria a JOIN usuarios u ON u.id=a.usuario_id
+      WHERE a.tipo = 'IMPORTACAO_ESTOQUE' AND a.detalhes = '$hash' AND u.empresa_id=$EmpresaId) THEN
         RAISE NOTICE 'Arquivo ja importado; nenhum saldo alterado.';
         RETURN;
     END IF;
-    SELECT id INTO ator FROM usuarios WHERE ativo AND perfil = 'CHEFE' ORDER BY id LIMIT 1;
+    SELECT u.id INTO ator FROM usuarios u WHERE u.ativo AND u.empresa_id = $EmpresaId
+      AND EXISTS (SELECT 1 FROM usuario_roles r WHERE r.usuario_id=u.id AND r.role='ROLE_ADMIN_EMPRESA')
+      ORDER BY u.id LIMIT 1;
     IF ator IS NULL THEN RAISE EXCEPTION 'Inicialize a conta administrativa antes da importacao.'; END IF;
     FOR item IN SELECT value FROM jsonb_array_elements($($json)::jsonb) LOOP
         IF EXISTS (SELECT 1 FROM materiais WHERE codigo = item->>'codigo') THEN
@@ -192,19 +196,19 @@ BEGIN
         END IF;
         material_id := nextval('sequencia_ids');
         origem := $nomeArquivo || ' | Estoque!linha ' || (item->>'linha');
-        INSERT INTO materiais (id,codigo,nome,unidade,referencia_fabricante,quantidade,quantidade_minima,ativo)
+        INSERT INTO materiais (id,codigo,nome,unidade,referencia_fabricante,quantidade,quantidade_minima,ativo,empresa_id)
         VALUES (material_id,item->>'codigo',item->>'nome',item->>'unidade',NULLIF(item->>'referencia',''),
-            (item->>'saldo')::integer,0,true);
+            (item->>'saldo')::integer,0,true,$EmpresaId);
         saldo := (item->>'inicial')::integer;
         IF saldo > 0 THEN
-            INSERT INTO movimentos (id,material_id,usuario_id,tipo,variacao,saldo_apos,observacao)
-            VALUES (nextval('sequencia_ids'),material_id,ator,'ENTRADA',saldo,saldo,
+            INSERT INTO movimentos (id,material_id,usuario_id,tipo,variacao,saldo_apos,empresa_id,observacao)
+            VALUES (nextval('sequencia_ids'),material_id,ator,'ENTRADA',saldo,saldo,$EmpresaId,
                 'Saldo anterior importado: ' || origem || ' | H' || (item->>'linha'));
         END IF;
         FOR entrada IN SELECT value FROM jsonb_array_elements(item->'entradas') LOOP
             saldo := saldo + (entrada->>'quantidade')::integer;
-            INSERT INTO movimentos (id,material_id,usuario_id,tipo,variacao,saldo_apos,observacao)
-            VALUES (nextval('sequencia_ids'),material_id,ator,'ENTRADA',(entrada->>'quantidade')::integer,saldo,
+            INSERT INTO movimentos (id,material_id,usuario_id,tipo,variacao,saldo_apos,empresa_id,observacao)
+            VALUES (nextval('sequencia_ids'),material_id,ator,'ENTRADA',(entrada->>'quantidade')::integer,saldo,$EmpresaId,
                 'Entrada da planilha em ' || (entrada->>'data') || ': ' || origem || ' | ' || (entrada->>'celula'));
         END LOOP;
         IF saldo <> (item->>'saldo')::integer THEN RAISE EXCEPTION 'Saldo inconsistente.'; END IF;

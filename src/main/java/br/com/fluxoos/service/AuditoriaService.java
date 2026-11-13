@@ -36,8 +36,11 @@ public class AuditoriaService {
     }
 
     @Transactional(readOnly = true)
-    public List<EventoSegurancaView> listarEventos() {
+    public List<EventoSegurancaView> listarEventos(br.com.fluxoos.entity.Usuario ator) {
+        UsuarioService.exigirChefia(ator);
         List<String> tipos = Arrays.stream(TipoEventoSeguranca.values()).map(Enum::name).toList();
-        return eventos.findByTipoInOrderByIdDesc(tipos).stream().map(EventoSegurancaView::de).toList();
+        var registros = ator.temRole(br.com.fluxoos.enums.Role.ROLE_ADMIN_MASTER) ? eventos.findByTipoInOrderByIdDesc(tipos)
+                : eventos.buscarSegurancaNaEmpresa(tipos, br.com.fluxoos.seguranca.EscopoEmpresa.exigir(ator));
+        return registros.stream().map(EventoSegurancaView::de).toList();
     }
 }

@@ -6,7 +6,7 @@ import java.util.Objects;
 
 @Entity
 @Table(name = "estoques")
-public class Estoque {
+public class Estoque extends RegistroEmpresa {
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "estoque_ids")
     @SequenceGenerator(name = "estoque_ids", sequenceName = "sequencia_ids", allocationSize = 1)
@@ -27,6 +27,9 @@ public class Estoque {
         this.tipo = Objects.requireNonNull(tipo, "Tipo do estoque obrigatório.");
     }
     public long getId() { return id; }
+    public Estoque(long empresaId, String codigo, String nome, TipoEstoque tipo) {
+        this(codigo, nome, tipo); vincularEmpresa(empresaId);
+    }
     public String getCodigo() { return codigo; }
     public String getNome() { return nome; }
     public TipoEstoque getTipo() { return tipo; }

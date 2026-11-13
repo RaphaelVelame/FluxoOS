@@ -70,7 +70,7 @@ class PropriedadeEstoqueTest {
         }
     }
 
-    private static final class Banco implements AutoCloseable {
+    static final class Banco implements AutoCloseable {
         final String url=System.getenv().getOrDefault("TEST_DATABASE_URL","jdbc:h2:mem:propriedade;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1");
         final String usuario=System.getenv().getOrDefault("TEST_DATABASE_USER","sa");
         final String senha=System.getenv().getOrDefault("TEST_DATABASE_PASSWORD","");
@@ -104,7 +104,7 @@ class PropriedadeEstoqueTest {
             var dados=new LinkedHashMap<String,List<List<String>>>();
             for(String t:List.of("usuarios","materiais","ordens","movimentos","itens_os"))try(var s=c.createStatement();var r=s.executeQuery("SELECT * FROM "+t+" ORDER BY 1,2")){
                 var linhas=new ArrayList<List<String>>();
-                while(r.next()){var linha=new ArrayList<String>();for(int n=1;n<=r.getMetaData().getColumnCount();n++)if(!r.getMetaData().getColumnName(n).equalsIgnoreCase("estoque_id"))linha.add(r.getString(n));linhas.add(linha);}
+                while(r.next()){var linha=new ArrayList<String>();for(int n=1;n<=r.getMetaData().getColumnCount();n++)if(!Set.of("estoque_id","empresa_id").contains(r.getMetaData().getColumnName(n).toLowerCase(Locale.ROOT)))linha.add(r.getString(n));linhas.add(linha);}
                 dados.put(t,linhas);
             }
             return dados;

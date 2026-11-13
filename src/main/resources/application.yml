@@ -36,6 +36,7 @@ server:
 fluxoos:
   cookie-secure: ${COOKIE_SECURE:false}
   bootstrap-password: ${BOOTSTRAP_PASSWORD:}
+  bootstrap-admin-master: ${BOOTSTRAP_ADMIN_MASTER:false}
   demo: ${DEMO_DATA:false}
   seguranca:
     max-sessoes: ${MAX_SESSOES:20}

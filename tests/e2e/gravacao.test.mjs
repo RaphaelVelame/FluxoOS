@@ -51,6 +51,41 @@ async function session(fn){
 async function encerrarSessao(page){
   try{await page.evaluate(async()=>{const csrf=sessionStorage.getItem('fluxoos.csrf');if(csrf)await fetch('/api/auth/logout',{method:'POST',headers:{'X-CSRF-Token':csrf}});});}catch{}
 }
+
+test('Equipe cria e edita múltiplas funções sem oferecer papéis administrativos',()=>session(async page=>{
+  const login='multi-ui-'+crypto.randomUUID();
+  await route(page,'equipe','.team-grid');await page.locator('#primary-action').click();
+  assert.equal(await page.locator('#modal input[value="ROLE_ADMIN_MASTER"]').count(),0);
+  assert.equal(await page.locator('#modal input[value="ROLE_ADMIN_EMPRESA"]').count(),0);
+  await page.locator('#modal [name=nome]').fill('Pessoa multifunção');
+  await page.locator('#modal [name=login]').fill(login);
+  await page.locator('#modal [name=senha]').fill(password);
+  await page.locator('#modal input[value="ROLE_ESTOQUISTA"]').check();
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  const u=(await data(page,'/usuarios')).find(u=>u.login===login);
+  assert.deepEqual(new Set(u.roles),new Set(['ROLE_ESTOQUISTA','ROLE_SUPORTE_EXTERNO']));
+  await page.locator(`[data-edit-user="${u.id}"]`).click();
+  await page.locator('#modal input[value="ROLE_SUPORTE_EXTERNO"]').uncheck();
+  await page.locator('#modal input[value="ROLE_SUPORTE_TECNICO"]').check();
+  await page.locator('#modal [name=nome]').fill('Pessoa atualizada');
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  const editada=(await data(page,'/usuarios')).find(v=>v.id===u.id);
+  assert.equal(editada.nome,'Pessoa atualizada');
+  assert.deepEqual(new Set(editada.roles),new Set(['ROLE_ESTOQUISTA','ROLE_SUPORTE_TECNICO']));
+}));
+
+test('Suporte técnico acumulado com estoquista pode criar OS e recebe controles coerentes',()=>session(async page=>{
+  const login='operacao-multi-'+crypto.randomUUID();
+  await write(page,'/usuarios',{login,nome:'Suporte multifunção',senha:password,roles:['ROLE_SUPORTE_TECNICO','ROLE_ESTOQUISTA']});
+  await page.locator('#logout').click();await page.locator('#login-form').waitFor();
+  await page.locator('[name=usuario]').fill(login);await page.locator('[name=senha]').fill(password);
+  await page.locator('#login-form button').click();await page.locator('#page-header h1').waitFor();
+  await newOrder(page,'OS multifunção '+crypto.randomUUID());
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await page.locator('.detail-heading').waitFor();assert.equal(await page.locator('#assign').count(),0);
+  await route(page,'estoque','#stock-list');assert.equal(await page.locator('#primary-action').count(),1);
+  await route(page,'equipe','.team-grid');assert.equal(await page.locator('#primary-action').count(),0);
+}));
 async function route(page,hash,selector){await page.evaluate(h=>location.hash=h,hash);await page.locator(selector).waitFor();}
 async function newOrder(page,problem){await route(page,'ordens','#orders-list');await page.locator('#primary-action').click();await page.locator('#modal [name=solicitante]').fill('Teste E2E');await page.locator('#modal [name=local]').fill('Ambiente isolado');await page.locator('#modal [name=problema]').fill(problem);}
 async function failReads(page){await page.route('**/api/**',async r=>{if(r.request().method()==='GET')await r.fulfill({status:503,contentType:'application/json',body:'{"mensagem":"Falha simulada de consulta"}'});else await r.continue();});}
@@ -83,7 +118,7 @@ async function write(page,url,body,method='POST'){
 async function material(page){const m=await write(page,'/materiais',{codigo:crypto.randomUUID(),nome:'Material de teste',unidade:'un',minimo:0});await write(page,`/materiais/${m.id}/movimentos`,{tipo:'ENTRADA',variacao:10,observacao:'Carga isolada'});return m;}
 async function order(page,{start=false,report=false}={}){
   const o=await write(page,'/ordens',{solicitante:'E2E',local:'Teste',problema:'Atendimento '+crypto.randomUUID(),prioridade:'MEDIA'});
-  const users=await data(page,'/usuarios');await write(page,`/ordens/${o.id}/atribuicao`,{tecnicoId:users.find(u=>u.perfil==='TECNICO'&&u.ativo).id});
+  const users=await data(page,'/usuarios');await write(page,`/ordens/${o.id}/atribuicao`,{tecnicoId:users.find(u=>u.roles?.includes('ROLE_SUPORTE_EXTERNO')&&u.ativo).id});
   if(start)await write(page,`/ordens/${o.id}/inicio`);
   if(report)await write(page,`/ordens/${o.id}/relato`,{relato:'Relato prévio'},'PUT');
   return o;
@@ -138,7 +173,7 @@ test('Cadastro de conta confirmado não aparece como erro de envio',()=>session(
 }));
 
 test('Status de conta confirmado não é repetido ao atualizar',()=>session(async page=>{
-  const u=await write(page,'/usuarios',{login:'status-'+crypto.randomUUID(),nome:'Pessoa status',perfil:'TECNICO',senha:password});
+  const u=await write(page,'/usuarios',{login:'status-'+crypto.randomUUID(),nome:'Pessoa status',roles:['ROLE_SUPORTE_EXTERNO'],senha:password});
   await page.locator('#refresh').click();await route(page,'equipe',`[data-user-status="${u.id}"]`);await page.locator(`[data-user-status="${u.id}"]`).click();
   await failReads(page);await page.locator('#modal button[type=submit]').click();await recovery(page);assert.equal((await data(page,'/usuarios')).find(x=>x.id===u.id).ativo,false);
 }));

@@ -12,6 +12,13 @@ import org.springframework.transaction.annotation.Propagation;
 public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
     Optional<Usuario> findByNomeUsuario(String nomeUsuario);
     List<Usuario> findAllByOrderByNomeCompletoAsc();
+    List<Usuario> findByEmpresaIdOrderByNomeCompletoAsc(long empresaId);
+    Optional<Usuario> findByIdAndEmpresaId(long id, long empresaId);
+    @Query("select distinct u from Usuario u join u.roles r where u.empresaId = :empresaId and u.ativo = true and r = :role")
+    List<Usuario> buscarAtivosPorRole(long empresaId, br.com.fluxoos.enums.Role role);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from Usuario u where u.id = :id and u.empresaId = :empresaId")
+    Optional<Usuario> buscarParaAtualizarNaEmpresa(long id, long empresaId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from Usuario u where u.id = :id")

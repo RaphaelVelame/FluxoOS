@@ -13,6 +13,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
+import br.com.fluxoos.seguranca.EscopoEmpresa;
 
 @Service
 @Transactional
@@ -36,13 +37,13 @@ public class EstoqueService {
     }
 
     @Transactional(readOnly = true)
-    public List<MaterialView> listar() {
-        return materiais.findAllByOrderByNomeAsc().stream().map(MaterialView::de).toList();
+    public List<MaterialView> listar(Usuario ator) {
+        return materiais.findByEmpresaIdOrderByNomeAsc(EscopoEmpresa.exigir(ator)).stream().map(MaterialView::de).toList();
     }
 
     @Transactional(readOnly = true)
-    public List<MovimentoView> listarMovimentos() {
-        return movimentos.findAllByOrderByIdDesc().stream().map(MovimentoView::de).toList();
+    public List<MovimentoView> listarMovimentos(Usuario ator) {
+        return movimentos.findByEmpresaIdOrderByIdDesc(EscopoEmpresa.exigir(ator)).stream().map(MovimentoView::de).toList();
     }
 
     public Material cadastrar(Usuario ator, String codigo, String nome, String unidade, int minimo) {
@@ -51,34 +52,34 @@ public class EstoqueService {
 
     public Material cadastrar(Usuario ator, String codigo, String nome, String unidade, int minimo, Long estoqueId) {
         OrdemServicoService.exigirGestor(ator);
-        if (estoqueId != null) carregarEstoque(estoqueId);
-        Material material = materiais.save(new Material(codigo, nome, unidade, 0, minimo, true, estoqueId));
+        if (estoqueId != null) carregarEstoque(ator, estoqueId);
+        Material material = materiais.save(new Material(EscopoEmpresa.exigir(ator), codigo, nome, unidade, minimo, estoqueId));
         auditoria.registrar(null, ator.getId(), "MATERIAL_CRIADO", "Material cadastrado: " + material.getCodigo());
         return material;
     }
 
     @Transactional(readOnly = true)
-    public List<EstoqueView> listarEstoques() {
-        return estoques.findAllByOrderByNomeAsc().stream().map(EstoqueView::de).toList();
+    public List<EstoqueView> listarEstoques(Usuario ator) {
+        return estoques.findByEmpresaIdOrderByNomeAsc(EscopoEmpresa.exigir(ator)).stream().map(EstoqueView::de).toList();
     }
 
     public Estoque cadastrarEstoque(Usuario ator, String codigo, String nome, TipoEstoque tipo) {
         OrdemServicoService.exigirGestor(ator);
-        Estoque estoque = estoques.save(new Estoque(codigo, nome, tipo));
+        Estoque estoque = estoques.save(new Estoque(EscopoEmpresa.exigir(ator), codigo, nome, tipo));
         auditoria.registrar(null, ator.getId(), "ESTOQUE_CRIADO", "Estoque cadastrado: " + estoque.getCodigo() + " (" + tipo + ").");
         return estoque;
     }
 
     public int classificar(Usuario ator, long estoqueId, List<Long> ids) {
         OrdemServicoService.exigirGestor(ator);
-        Estoque destino = carregarEstoque(estoqueId);
+        Estoque destino = carregarEstoque(ator, estoqueId);
         if (ids == null || ids.isEmpty() || ids.size() > 500 || ids.stream().anyMatch(id -> id == null || id <= 0)) {
             throw new IllegalArgumentException("Selecione de 1 a 500 materiais válidos.");
         }
         int classificados = 0;
         // Ordem fixa de locks; repetir a mesma classificacao e uma operacao sem efeito adicional.
         for (long id : ids.stream().distinct().sorted().toList()) {
-            Material material = carregarMaterial(id);
+            Material material = carregarMaterial(ator, id);
             if (material.classificarEstoque(estoqueId)) {
                 auditoria.registrar(null, ator.getId(), "MATERIAL_CLASSIFICADO",
                         "Material " + material.getCodigo() + " vinculado ao estoque " + destino.getCodigo()
@@ -90,13 +91,13 @@ public class EstoqueService {
         return classificados;
     }
 
-    private Estoque carregarEstoque(long id) {
-        return estoques.findById(id).orElseThrow(() -> new NaoEncontradoException("Estoque não encontrado."));
+    private Estoque carregarEstoque(Usuario ator, long id) {
+        return estoques.findByIdAndEmpresaId(id, EscopoEmpresa.exigir(ator)).orElseThrow(() -> new NaoEncontradoException("Estoque não encontrado."));
     }
 
     public long movimentar(Usuario ator, long materialId, TipoMovimento tipo, int variacao, String observacao, String chave) {
         OrdemServicoService.exigirGestor(ator);
-        Material material = carregarMaterial(materialId);
+        Material material = carregarMaterial(ator, materialId);
         String conteudo = resumo("estoque:" + materialId + ":" + tipo + ":" + variacao + ":" + observacao);
         Long anterior = encontrarRepeticao(ator, chave, conteudo);
         if (anterior != null) return anterior;
@@ -117,13 +118,13 @@ public class EstoqueService {
 
     public long consumir(Usuario ator, long ordemId, long materialId, int quantidade, String observacao, String chave) {
         // Todas as operações de consumo bloqueiam primeiro a OS e depois o material.
-        OrdemServico ordem = ordens.buscarParaAtualizar(ordemId)
+        OrdemServico ordem = ordens.buscarParaAtualizarNaEmpresa(ordemId, EscopoEmpresa.exigir(ator))
                 .orElseThrow(() -> new NaoEncontradoException("Ordem de serviço não encontrada."));
         if (!ordem.podeRegistrarUso(ator)) throw new SecurityException("Sem permissão para registrar material nesta OS.");
         String conteudo = resumo("consumo:" + ordemId + ":" + materialId + ":" + quantidade + ":" + observacao);
         Long anterior = encontrarRepeticao(ator, chave, conteudo);
         if (anterior != null) return anterior;
-        Material material = carregarMaterial(materialId);
+        Material material = carregarMaterial(ator, materialId);
         ordem.validarInclusaoItem(material, quantidade);
         MovimentoEstoque movimento = new MovimentoEstoque(material, ator, ordem, TipoMovimento.SAIDA,
                 -quantidade, material.preverSaldo(-quantidade), observacao);
@@ -137,13 +138,13 @@ public class EstoqueService {
 
     public void alterarStatus(Usuario ator, long materialId, boolean ativo) {
         OrdemServicoService.exigirGestor(ator);
-        Material material = carregarMaterial(materialId);
+        Material material = carregarMaterial(ator, materialId);
         if (ativo) material.ativar(); else material.desativar();
         auditoria.registrar(null, ator.getId(), "STATUS_MATERIAL", material.getCodigo() + (ativo ? " ativado." : " desativado."));
     }
 
-    private Material carregarMaterial(long id) {
-        return materiais.buscarParaAtualizar(id).orElseThrow(() -> new NaoEncontradoException("Material não encontrado."));
+    private Material carregarMaterial(Usuario ator, long id) {
+        return materiais.buscarParaAtualizarNaEmpresa(id, EscopoEmpresa.exigir(ator)).orElseThrow(() -> new NaoEncontradoException("Material não encontrado."));
     }
 
     private void registrarRequisicao(Usuario ator, String chave, String conteudo, MovimentoEstoque movimento) {

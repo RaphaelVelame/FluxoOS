@@ -7,7 +7,7 @@ import java.util.Objects;
 
 @Entity
 @Table(name = "movimentos")
-public class MovimentoEstoque {
+public class MovimentoEstoque extends RegistroEmpresa {
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "movimento_ids")
     @SequenceGenerator(name = "movimento_ids", sequenceName = "sequencia_ids", allocationSize = 1)
@@ -36,6 +36,9 @@ public class MovimentoEstoque {
 
     public MovimentoEstoque(Material material, Usuario usuario, OrdemServico ordem,
                             TipoMovimento tipo, int variacao, int saldoApos, String observacao) {
+        if (!Objects.equals(material.getEmpresaId(), usuario.getEmpresaId()) ||
+                (ordem != null && !Objects.equals(material.getEmpresaId(), ordem.getEmpresaId()))) throw new IllegalArgumentException("Movimento entre empresas distintas.");
+        vincularEmpresa(material.getEmpresaId());
         this.materialId = material.getId();
         this.estoqueId = material.getEstoqueId();
         this.usuarioId = usuario.getId();

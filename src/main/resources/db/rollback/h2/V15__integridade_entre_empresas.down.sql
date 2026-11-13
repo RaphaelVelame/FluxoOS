@@ -1,0 +1,28 @@
+-- Manutencao exclusiva: volta das constraints, sem DML.
+ALTER TABLE itens_os DROP CONSTRAINT fk_itens_os_estoque_id_tenant;
+ALTER TABLE itens_os DROP CONSTRAINT fk_itens_os_material_id_tenant;
+ALTER TABLE itens_os DROP CONSTRAINT fk_itens_os_ordem_id_tenant;
+ALTER TABLE movimentos DROP CONSTRAINT fk_movimentos_estoque_id_tenant;
+ALTER TABLE movimentos DROP CONSTRAINT fk_movimentos_ordem_id_tenant;
+ALTER TABLE movimentos DROP CONSTRAINT fk_movimentos_usuario_id_tenant;
+ALTER TABLE movimentos DROP CONSTRAINT fk_movimentos_material_id_tenant;
+ALTER TABLE materiais DROP CONSTRAINT fk_materiais_estoque_id_tenant;
+ALTER TABLE ordens DROP CONSTRAINT fk_ordens_autor_abertura_id_tenant;
+ALTER TABLE ordens DROP CONSTRAINT fk_ordens_equipe_id_tenant;
+ALTER TABLE estoques DROP CONSTRAINT uq_estoques_empresa;
+ALTER TABLE materiais DROP CONSTRAINT uq_materiais_empresa;
+ALTER TABLE ordens DROP CONSTRAINT uq_ordens_empresa;
+ALTER TABLE usuarios DROP CONSTRAINT uq_usuarios_empresa;
+ALTER TABLE usuario_roles DROP CONSTRAINT ck_roles_disponiveis;
+ALTER TABLE usuario_roles DROP CONSTRAINT fk_roles_usuario;
+ALTER TABLE itens_os DROP CONSTRAINT fk_itens_os_empresa;
+ALTER TABLE movimentos DROP CONSTRAINT fk_movimentos_empresa;
+ALTER TABLE estoques DROP CONSTRAINT fk_estoques_empresa;
+ALTER TABLE materiais DROP CONSTRAINT fk_materiais_empresa;
+ALTER TABLE ordens DROP CONSTRAINT fk_ordens_empresa;
+ALTER TABLE usuarios DROP CONSTRAINT fk_usuarios_empresa;
+DROP INDEX idx_usuarios_tenant;
+DROP INDEX idx_ordens_tenant;
+DROP INDEX idx_materiais_tenant;
+DROP INDEX idx_estoques_tenant;
+DROP INDEX idx_movimentos_tenant;

@@ -35,7 +35,7 @@ try {
     $env:SPRING_PROFILES_ACTIVE = 'default'
     [Environment]::SetEnvironmentVariable('PGOPTIONS',$null,'Process')
     Write-Host "Validando no cluster descartavel 127.0.0.1:$porta. O banco configurado no .env nao sera utilizado."
-    & .\mvnw.cmd '-Dfluxoos.build.directory=target/postgres-verificacao' '-Dtest=FluxoOperacionalTest,RevogacaoSessaoTest,MigracaoSessaoTest,LimitesLoginTest,IntegridadeSchemaTest,PropriedadeEstoqueTest' test
+    & .\mvnw.cmd '-Dfluxoos.build.directory=target/postgres-verificacao' '-Dtest=FluxoOperacionalTest,RevogacaoSessaoTest,MigracaoSessaoTest,LimitesLoginTest,IntegridadeSchemaTest,PropriedadeEstoqueTest,MultiTenantRbacTest,MigracaoMultiTenantTest' test
     $resultado = $LASTEXITCODE
     if ($resultado -eq 0 -and $IncluirImportacao) {
         & (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests/importacao-estoque.ps1') -Postgres

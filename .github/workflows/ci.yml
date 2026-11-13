@@ -38,7 +38,7 @@ jobs:
         run: npm test
         working-directory: tests/e2e
       - name: Validar fluxo operacional no PostgreSQL
-        run: sh ./mvnw --batch-mode -Dtest=FluxoOperacionalTest,RevogacaoSessaoTest,MigracaoSessaoTest,LimitesLoginTest,IntegridadeSchemaTest,PropriedadeEstoqueTest test
+        run: sh ./mvnw --batch-mode -Dtest=FluxoOperacionalTest,RevogacaoSessaoTest,MigracaoSessaoTest,LimitesLoginTest,IntegridadeSchemaTest,PropriedadeEstoqueTest,MultiTenantRbacTest,MigracaoMultiTenantTest test
         env:
           TEST_DATABASE_URL: jdbc:postgresql://localhost:5432/fluxoos_test
           TEST_DATABASE_USER: fluxoos

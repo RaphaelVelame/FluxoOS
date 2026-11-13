@@ -1,5 +1,5 @@
 import { api, salvarCsrf } from './api.js';
-import { icon, escape, perfis, toast } from './components.js';
+import { nomesFuncoes, temFuncao, icon, escape, toast } from './components.js';
 import { dashboard } from './views/dashboard.js';
 import { ordens, detalheOrdem, novaOrdem } from './views/orders.js';
 import { estoque } from './views/inventory.js';
@@ -11,8 +11,10 @@ let sincronizando = null;
 const navegacao = [['inicio', 'Visão geral', 'grid'], ['ordens', 'Ordens de serviço', 'clipboard'], ['estoque', 'Estoque', 'box'], ['equipe', 'Equipe', 'users']];
 const contexto = {
   estado,
-  get gestor() { return estado.usuario?.ativo && ['CHEFE', 'SUPORTE_TI'].includes(estado.usuario.perfil); },
-  get chefe() { return estado.usuario?.perfil === 'CHEFE'; },
+  get gestor() { return temFuncao(estado.usuario, 'ROLE_ADMIN_EMPRESA', 'ROLE_ESTOQUISTA'); },
+  get chefe() { return temFuncao(estado.usuario, 'ROLE_ADMIN_EMPRESA'); },
+  get podeCriarOs() { return temFuncao(estado.usuario, 'ROLE_ADMIN_EMPRESA', 'ROLE_SUPERVISOR', 'ROLE_SUPORTE_TECNICO'); },
+  temFuncao,
   nomeUsuario: id => estado.usuarios.find(u => u.id === id)?.nome || 'Não designado',
   nomeEstoque: id => {
     if (id == null) return 'Sem classificação';
@@ -95,7 +97,7 @@ function login() {
 
 function shell() {
   const u = estado.usuario;
-  document.querySelector('#app').innerHTML = `<div class="app-layout"><aside class="sidebar"><a class="brand" href="#inicio"><span class="brand-mark">F</span>Fluxo<span>OS</span></a><span class="nav-label">ESPAÇO DE TRABALHO</span><nav aria-label="Navegação principal">${navegacao.map(([rota, nome, simbolo]) => `<a href="#${rota}" data-nav="${rota}">${icon(simbolo)}<span>${nome}</span></a>`).join('')}</nav><div class="sidebar-note">${icon('check')}<strong>Do chamado à solução.</strong><p>Tudo conectado em um único fluxo.</p><span class="note-decoration"></span></div><div class="sidebar-bottom"><a class="profile" href="#conta"><span class="avatar">${escape(contexto.iniciais(u.id))}</span><div><strong>${escape(u.nome)}</strong><small>${escape(perfis[u.perfil])}</small></div>${icon('user')}</a><button id="logout" class="logout">${icon('logout')} Sair da conta</button></div></aside>
+  document.querySelector('#app').innerHTML = `<div class="app-layout"><aside class="sidebar"><a class="brand" href="#inicio"><span class="brand-mark">F</span>Fluxo<span>OS</span></a><span class="nav-label">ESPAÇO DE TRABALHO</span><nav aria-label="Navegação principal">${navegacao.map(([rota, nome, simbolo]) => `<a href="#${rota}" data-nav="${rota}">${icon(simbolo)}<span>${nome}</span></a>`).join('')}</nav><div class="sidebar-note">${icon('check')}<strong>Do chamado à solução.</strong><p>Tudo conectado em um único fluxo.</p><span class="note-decoration"></span></div><div class="sidebar-bottom"><a class="profile" href="#conta"><span class="avatar">${escape(contexto.iniciais(u.id))}</span><div><strong>${escape(u.nome)}</strong><small>${escape(nomesFuncoes(u))}</small></div>${icon('user')}</a><button id="logout" class="logout">${icon('logout')} Sair da conta</button></div></aside>
     <div class="workspace"><header class="topbar"><span class="workspace-label"><span class="online-dot"></span> Gestão de operações</span><div class="topbar-actions"><span id="today"></span><a href="#conta" class="mobile-profile avatar" aria-label="Minha conta">${escape(contexto.iniciais(u.id))}</a><button class="icon-button" id="refresh" aria-label="Atualizar dados">${icon('refresh')}</button></div></header><main id="main" tabindex="-1"><div id="page-header" class="page-header"></div><div id="content"></div><footer class="workspace-footer"><span>FluxoOS</span> Organização que faz o trabalho acontecer.</footer></main></div>
     <nav class="bottom-nav" aria-label="Navegação no celular">${navegacao.map(([rota, nome, simbolo]) => `<a href="#${rota}" data-nav="${rota}">${icon(simbolo)}<span>${rota === 'inicio' ? 'Início' : rota === 'ordens' ? 'Ordens' : nome}</span></a>`).join('')}</nav></div>`;
   document.querySelector('#today').textContent = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', timeZone: 'America/Bahia' }).format(new Date());

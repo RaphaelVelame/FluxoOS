@@ -1,8 +1,18 @@
 import { api } from '../api.js';
-import { escape, icon, badge, campo, modal, perfis, data, toast } from '../components.js';
+import { nomesFuncoes, funcoes, escape, icon, badge, campo, modal, perfis, data, toast } from '../components.js';
 
 export function equipe(ctx) {
-  ctx.pagina(`<section class="team-grid">${ctx.estado.usuarios.map(u => `<article class="panel person-card"><div class="card-top"><span class="person-avatar">${escape(ctx.iniciais(u.id))}</span>${badge(u.ativo ? 'Ativo' : 'Inativo', u.ativo ? 'concluida' : 'neutral')}</div><h2>${escape(u.nome)}</h2><p>@${escape(u.login)}</p><span class="role-label">${escape(perfis[u.perfil])}</span>${ctx.chefe && u.id !== ctx.estado.usuario.id ? `<button class="button secondary full-width" data-user-status="${u.id}">${u.ativo ? 'Desativar' : 'Ativar'} conta</button>` : ''}</article>`).join('')}</section>${ctx.chefe ? '<div class="action-row"><button class="button secondary" id="security-events">Consultar eventos de segurança</button></div>' : ''}`, { titulo: 'Equipe', subtitulo: 'Pessoas e responsabilidades da operação', acao: ctx.chefe ? { texto: 'Adicionar pessoa', executar: () => novoUsuario(ctx) } : null });
+  ctx.pagina(`<section class="team-grid">${ctx.estado.usuarios.map(u => `<article class="panel person-card"><div class="card-top"><span class="person-avatar">${escape(ctx.iniciais(u.id))}</span>${badge(u.ativo ? 'Ativo' : 'Inativo', u.ativo ? 'concluida' : 'neutral')}</div><h2>${escape(u.nome)}</h2><p>@${escape(u.login)}</p><span class="role-label">${escape(nomesFuncoes(u))}</span>${ctx.chefe && !u.roles?.includes('ROLE_ADMIN_EMPRESA') && u.id !== ctx.estado.usuario.id ? `<button class="button secondary full-width" data-edit-user="${u.id}">Editar funções</button><button class="button secondary full-width" data-user-status="${u.id}">${u.ativo ? 'Desativar' : 'Ativar'} conta</button>` : ''}</article>`).join('')}</section>${ctx.chefe ? '<div class="action-row"><button class="button secondary" id="security-events">Consultar eventos de segurança</button></div>' : ''}`, { titulo: 'Equipe', subtitulo: 'Pessoas e responsabilidades da operação', acao: ctx.chefe ? { texto: 'Adicionar pessoa', executar: () => novoUsuario(ctx) } : null });
+  document.querySelectorAll('[data-edit-user]').forEach(el => {
+    el.onclick = () => {
+      const u = ctx.estado.usuarios.find(u => u.id === Number(el.dataset.editUser));
+      modal('Editar pessoa e funções', `${campo('Nome completo', 'nome', 'text', 'maxlength="160"')}${seletorFuncoes(u.roles)}`, {
+        aoAbrir: el => { el.querySelector('[name=nome]').value = u.nome; },
+        aoEnviar: (e, form) => api(`/usuarios/${u.id}`, { method: 'PUT', body: { nome: e.nome, roles: new FormData(form).getAll('roles') } }),
+        aoSalvar: () => ctx.aposGravar('Pessoa e funções atualizadas.'),
+      });
+    };
+  });
   document.querySelectorAll('[data-user-status]').forEach(el => {
     el.onclick = () => {
       const u = ctx.estado.usuarios.find(u => u.id === Number(el.dataset.userStatus));
@@ -19,15 +29,19 @@ export function equipe(ctx) {
   });
 }
 
+function seletorFuncoes(selecionadas = ['ROLE_SUPORTE_EXTERNO']) {
+  return '<fieldset><legend>Funções operacionais</legend>' + Object.entries(funcoes).filter(([r]) => !['ROLE_ADMIN_MASTER', 'ROLE_ADMIN_EMPRESA'].includes(r)).map(([r, nome]) => `<label class="check-filter"><input type="checkbox" name="roles" value="${r}" ${selecionadas.includes(r) ? 'checked' : ''}> ${escape(nome)}</label>`).join('') + '</fieldset>';
+}
+
 function novoUsuario(ctx) {
-  modal('Adicionar pessoa à equipe', `${campo('Nome completo', 'nome', 'text', 'maxlength="160" autocomplete="name"')}${campo('Login', 'login', 'text', 'minlength="3" maxlength="80" pattern="[a-z0-9._-]+" autocomplete="off" placeholder="Ex.: maria.santos"')}<label>Perfil de acesso<select name="perfil">${Object.entries(perfis).map(([v, t]) => `<option value="${v}" ${v === 'TECNICO' ? 'selected' : ''}>${t}</option>`).join('')}</select></label>${campo('Senha inicial', 'senha', 'password', 'minlength="15" maxlength="1024" autocomplete="new-password"')}<p class="hint">Use pelo menos 15 caracteres. Compartilhe a senha por um canal privado e peça a troca no primeiro acesso.</p>`, { textoBotao: 'Criar conta', aoEnviar: async e => {
-    return api('/usuarios', { method: 'POST', body: e });
+  modal('Adicionar pessoa à equipe', `${campo('Nome completo', 'nome', 'text', 'maxlength="160" autocomplete="name"')}${campo('Login', 'login', 'text', 'minlength="3" maxlength="80" pattern="[a-z0-9._-]+" autocomplete="off" placeholder="Ex.: maria.santos"')}${seletorFuncoes()}${campo('Senha inicial', 'senha', 'password', 'minlength="15" maxlength="1024" autocomplete="new-password"')}<p class="hint">Use pelo menos 15 caracteres. Compartilhe a senha por um canal privado e peça a troca no primeiro acesso.</p>`, { textoBotao: 'Criar conta', aoEnviar: async (e, form) => {
+    return api('/usuarios', { method: 'POST', body: { ...e, roles: new FormData(form).getAll('roles') } });
   }, aoSalvar: () => ctx.aposGravar('Conta criada.') });
 }
 
 export function conta(ctx) {
   const u = ctx.estado.usuario;
-  ctx.pagina(`<section class="panel account-panel"><span class="person-avatar">${escape(ctx.iniciais(u.id))}</span><h2>${escape(u.nome)}</h2><p>@${escape(u.login)} · ${escape(perfis[u.perfil])}</p><hr><h3>Alterar minha senha</h3><p class="muted">Ao trocar a senha, todas as suas sessões serão encerradas.</p><form id="password-form" class="stack">${campo('Senha atual', 'atual', 'password', 'autocomplete="current-password" maxlength="1024"')}${campo('Nova senha', 'nova', 'password', 'minlength="15" maxlength="1024" autocomplete="new-password"')}${campo('Confirme a nova senha', 'confirmacao', 'password', 'minlength="15" maxlength="1024" autocomplete="new-password"')}<p class="hint">Pelo menos 15 caracteres. Uma frase longa é uma boa opção.</p><p class="form-error" role="alert"></p><button class="button" type="submit">Alterar senha</button></form></section>`, { titulo: 'Minha conta', subtitulo: 'Seu perfil e a segurança do seu acesso' });
+  ctx.pagina(`<section class="panel account-panel"><span class="person-avatar">${escape(ctx.iniciais(u.id))}</span><h2>${escape(u.nome)}</h2><p>@${escape(u.login)} · ${escape(nomesFuncoes(u))}</p><hr><h3>Alterar minha senha</h3><p class="muted">Ao trocar a senha, todas as suas sessões serão encerradas.</p><form id="password-form" class="stack">${campo('Senha atual', 'atual', 'password', 'autocomplete="current-password" maxlength="1024"')}${campo('Nova senha', 'nova', 'password', 'minlength="15" maxlength="1024" autocomplete="new-password"')}${campo('Confirme a nova senha', 'confirmacao', 'password', 'minlength="15" maxlength="1024" autocomplete="new-password"')}<p class="hint">Pelo menos 15 caracteres. Uma frase longa é uma boa opção.</p><p class="form-error" role="alert"></p><button class="button" type="submit">Alterar senha</button></form></section>`, { titulo: 'Minha conta', subtitulo: 'Seu perfil e a segurança do seu acesso' });
   document.querySelector('#password-form').onsubmit = async e => {
     e.preventDefault();
     const form = e.currentTarget;
