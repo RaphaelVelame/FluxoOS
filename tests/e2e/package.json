@@ -2,6 +2,6 @@
   "name": "fluxoos-e2e",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test gravacao.test.mjs" },
+  "scripts": { "test": "node --test gravacao.test.mjs master.test.mjs" },
   "devDependencies": { "playwright": "1.65.0" }
 }

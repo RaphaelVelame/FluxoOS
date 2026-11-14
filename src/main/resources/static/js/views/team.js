@@ -22,10 +22,12 @@ export function equipe(ctx) {
     };
   });
   document.querySelector('#security-events')?.addEventListener('click', async () => {
+    const usuario = ctx.estado.usuario;
     try {
       const eventos = await api('/seguranca/eventos');
+      if (usuario !== ctx.estado.usuario || location.hash !== '#equipe') return;
       modal('Eventos de segurança', eventos.length ? eventos.slice(0, 100).map(e => `<div class="security-event"><strong>${escape(e.tipoEvento.replaceAll('_', ' '))}</strong><p>${escape(e.detalhes)}</p><small>${data(e.criadoEm)}</small></div>`).join('') : '<p>Nenhum evento registrado.</p>', { largo: true });
-    } catch (e) { toast(e.message, true); }
+    } catch (e) { if (usuario === ctx.estado.usuario) toast(e.message, true); }
   });
 }
 

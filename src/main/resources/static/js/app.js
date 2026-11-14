@@ -5,12 +5,13 @@ import { ordens, detalheOrdem, novaOrdem } from './views/orders.js';
 import { estoque } from './views/inventory.js';
 import { equipe, conta } from './views/team.js';
 
-const estado = { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [], estoques: [] };
+const estado = { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [], estoques: [], empresas: [] };
 let sincronizacaoPendente = null;
 let sincronizando = null;
 const navegacao = [['inicio', 'Visão geral', 'grid'], ['ordens', 'Ordens de serviço', 'clipboard'], ['estoque', 'Estoque', 'box'], ['equipe', 'Equipe', 'users']];
 const contexto = {
   estado,
+  get master() { return temFuncao(estado.usuario, 'ROLE_ADMIN_MASTER'); },
   get gestor() { return temFuncao(estado.usuario, 'ROLE_ADMIN_EMPRESA', 'ROLE_ESTOQUISTA'); },
   get chefe() { return temFuncao(estado.usuario, 'ROLE_ADMIN_EMPRESA'); },
   get podeCriarOs() { return temFuncao(estado.usuario, 'ROLE_ADMIN_EMPRESA', 'ROLE_SUPERVISOR', 'ROLE_SUPORTE_TECNICO'); },
@@ -21,13 +22,18 @@ const contexto = {
     const e = estado.estoques.find(e => e.id === id);
     return e ? `${e.tipo === 'CLIENTE' ? 'Cliente' : 'Empresa'} · ${e.nome}` : `Estoque #${id}`;
   },
-  iniciais: id => (estado.usuarios.find(u => u.id === id)?.nome || '?').split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join(''),
+  iniciais: id => (estado.usuarios.find(u => u.id === id)?.nome || (estado.usuario?.id === id ? estado.usuario.nome : '?')).split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join(''),
   atualizar, pagina, encerrar, aposGravar,
   novaOrdem: () => novaOrdem(contexto),
 };
 
 async function atualizar() {
   const usuario = estado.usuario;
+  if (contexto.master) {
+    const [ordens, usuarios, empresas] = await Promise.all([api('/ordens'), api('/usuarios'), api('/plataforma/empresas')]);
+    if (usuario === estado.usuario) Object.assign(estado, { ordens, usuarios, empresas, materiais: [], movimentos: [], estoques: [] });
+    return;
+  }
   const [ordens, materiais, usuarios, movimentos, estoques] = await Promise.all([
     api('/ordens'), api('/materiais'), api('/usuarios'), api('/movimentos'), api('/estoques'),
   ]);
@@ -97,9 +103,10 @@ function login() {
 
 function shell() {
   const u = estado.usuario;
-  document.querySelector('#app').innerHTML = `<div class="app-layout"><aside class="sidebar"><a class="brand" href="#inicio"><span class="brand-mark">F</span>Fluxo<span>OS</span></a><span class="nav-label">ESPAÇO DE TRABALHO</span><nav aria-label="Navegação principal">${navegacao.map(([rota, nome, simbolo]) => `<a href="#${rota}" data-nav="${rota}">${icon(simbolo)}<span>${nome}</span></a>`).join('')}</nav><div class="sidebar-note">${icon('check')}<strong>Do chamado à solução.</strong><p>Tudo conectado em um único fluxo.</p><span class="note-decoration"></span></div><div class="sidebar-bottom"><a class="profile" href="#conta"><span class="avatar">${escape(contexto.iniciais(u.id))}</span><div><strong>${escape(u.nome)}</strong><small>${escape(nomesFuncoes(u))}</small></div>${icon('user')}</a><button id="logout" class="logout">${icon('logout')} Sair da conta</button></div></aside>
+  const itensNavegacao = navegacao.filter(([rota]) => !contexto.master || rota !== 'estoque');
+  document.querySelector('#app').innerHTML = `<div class="app-layout"><aside class="sidebar"><a class="brand" href="#inicio"><span class="brand-mark">F</span>Fluxo<span>OS</span></a><span class="nav-label">ESPAÇO DE TRABALHO</span><nav aria-label="Navegação principal">${itensNavegacao.map(([rota, nome, simbolo]) => `<a href="#${rota}" data-nav="${rota}">${icon(simbolo)}<span>${nome}</span></a>`).join('')}</nav><div class="sidebar-note">${icon('check')}<strong>Do chamado à solução.</strong><p>Tudo conectado em um único fluxo.</p><span class="note-decoration"></span></div><div class="sidebar-bottom"><a class="profile" href="#conta"><span class="avatar">${escape(contexto.iniciais(u.id))}</span><div><strong>${escape(u.nome)}</strong><small>${escape(nomesFuncoes(u))}</small></div>${icon('user')}</a><button id="logout" class="logout">${icon('logout')} Sair da conta</button></div></aside>
     <div class="workspace"><header class="topbar"><span class="workspace-label"><span class="online-dot"></span> Gestão de operações</span><div class="topbar-actions"><span id="today"></span><a href="#conta" class="mobile-profile avatar" aria-label="Minha conta">${escape(contexto.iniciais(u.id))}</a><button class="icon-button" id="refresh" aria-label="Atualizar dados">${icon('refresh')}</button></div></header><main id="main" tabindex="-1"><div id="page-header" class="page-header"></div><div id="content"></div><footer class="workspace-footer"><span>FluxoOS</span> Organização que faz o trabalho acontecer.</footer></main></div>
-    <nav class="bottom-nav" aria-label="Navegação no celular">${navegacao.map(([rota, nome, simbolo]) => `<a href="#${rota}" data-nav="${rota}">${icon(simbolo)}<span>${rota === 'inicio' ? 'Início' : rota === 'ordens' ? 'Ordens' : nome}</span></a>`).join('')}</nav></div>`;
+    <nav class="bottom-nav" aria-label="Navegação no celular">${itensNavegacao.map(([rota, nome, simbolo]) => `<a href="#${rota}" data-nav="${rota}">${icon(simbolo)}<span>${rota === 'inicio' ? 'Início' : rota === 'ordens' ? 'Ordens' : nome}</span></a>`).join('')}</nav></div>`;
   document.querySelector('#today').textContent = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', timeZone: 'America/Bahia' }).format(new Date());
   document.querySelector('#logout').onclick = async () => {
     try { await api('/auth/logout', { method: 'POST' }); encerrar(); }
@@ -122,6 +129,7 @@ function pagina(html, { titulo, subtitulo, acao } = {}) {
 
 async function rota() {
   if (!estado.usuario) return;
+  const usuario = estado.usuario;
   if (sincronizacaoPendente) { mostrarPendencia(!!sincronizando); return false; }
   const caminho = location.hash.slice(1) || 'inicio';
   const [nome, id] = caminho.split('/');
@@ -135,13 +143,14 @@ async function rota() {
       pagina('<p class="muted">Carregando atendimento…</p>', { titulo: 'Ordem de serviço', subtitulo: 'Consultando os detalhes' });
       await detalheOrdem(contexto, Number(id));
     } else if (nome === 'ordens') ordens(contexto);
+    else if (nome === 'estoque' && contexto.master) pagina('<div class="empty-state"><h2>Consulte o estoque da empresa</h2><p>Use uma conta operacional da empresa para consultar seus materiais e movimentos.</p><a class="button secondary" href="#inicio">Voltar à visão global</a></div>', { titulo: 'Estoque por empresa', subtitulo: 'O acesso master possui escopo global' });
     else if (nome === 'estoque') estoque(contexto);
     else if (nome === 'equipe') equipe(contexto);
     else if (nome === 'conta') conta(contexto);
     else dashboard(contexto);
     return true;
   } catch (e) {
-    if (estado.usuario) pagina(`<div class="empty-state"><h2>Não foi possível abrir esta página</h2><p>${escape(e.message)}</p><a class="button secondary" href="#inicio">Voltar ao início</a></div>`, { titulo: 'Página indisponível', subtitulo: 'Tente atualizar os dados' });
+    if (usuario === estado.usuario && caminho === (location.hash.slice(1) || 'inicio')) pagina(`<div class="empty-state"><h2>Não foi possível abrir esta página</h2><p>${escape(e.message)}</p><a class="button secondary" href="#inicio">Voltar ao início</a></div>`, { titulo: 'Página indisponível', subtitulo: 'Tente atualizar os dados' });
     return false;
   }
 }
@@ -150,7 +159,7 @@ function encerrar() {
   sincronizacaoPendente = null;
   sincronizando = null;
   salvarCsrf(null);
-  Object.assign(estado, { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [], estoques: [] });
+  Object.assign(estado, { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [], estoques: [], empresas: [] });
   location.hash = 'inicio';
   login();
 }

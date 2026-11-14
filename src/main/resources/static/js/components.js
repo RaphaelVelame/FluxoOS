@@ -1,3 +1,5 @@
+import { sessaoAtual } from './api.js';
+
 export const escape = valor => String(valor ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const numero = valor => new Intl.NumberFormat('pt-BR').format(valor);
 export const data = valor => valor ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(valor)) : '—';
@@ -40,6 +42,7 @@ export function toast(mensagem, erro = false) {
 }
 
 export function modal(titulo, conteudo, { aoEnviar, aoSalvar, textoBotao = 'Salvar', largo = false, aoAbrir } = {}) {
+  const sessao = sessaoAtual();
   let enviando = false;
   let confirmado = false;
   const el = document.querySelector('#modal');
@@ -62,11 +65,13 @@ export function modal(titulo, conteudo, { aoEnviar, aoSalvar, textoBotao = 'Salv
       let resultado;
       try { resultado = await aoEnviar(Object.fromEntries(new FormData(form)), form); }
       catch (e) {
+        if (sessao !== sessaoAtual()) return;
         erro.textContent = e.message;
         botao.disabled = false;
         enviando = false;
         return;
       }
+      if (sessao !== sessaoAtual()) return;
       confirmado = true;
       enviando = false;
       if (el.contains(form)) el.close();

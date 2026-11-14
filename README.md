@@ -210,6 +210,9 @@ Consulte [arquitetura](docs/ARQUITETURA.md), [API](docs/API.md) e [operação](d
 A [revisão final de código e testes de 12/11/2026](docs/REVISAO_FINAL_2026-11-12.md) registra os
 defeitos reproduzidos e corrigidos, as atualizações de segurança e os limites da análise.
 
+A [revisão de 14/11/2026](docs/REVISAO_CODIGO_2026-11-14.md) corrige a entrada master e respostas
+atrasadas de sessões anteriores, com regressões entre empresas e visão global de consulta.
+
 ## Limites da entrega
 
 Esta é uma aplicação funcional para execução local e evolução, sem publicação automática. A integração inclui validação das migrações e do fluxo operacional em PostgreSQL real; repita essa verificação ao trocar o ambiente de destino. Sessões e limites de login continuam em memória: reiniciar exige novo login, e múltiplas instâncias precisam de armazenamento compartilhado. Backups, HTTPS, monitoração externa, recuperação de desastre e políticas de retenção precisam ser configurados no ambiente de implantação. A assinatura é uma imagem do atendimento; não implementa certificação digital. Não há envio de e-mails, recuperação de senha, anexos, modo offline ou aplicativo nativo.

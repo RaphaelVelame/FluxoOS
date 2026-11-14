@@ -21,7 +21,7 @@ before(async()=>{
     '-jar',process.env.FLUXOOS_TEST_JAR || path.join(root,'target/fluxoos-1.0.0-SNAPSHOT.jar'),
     '--spring.profiles.active=default','--spring.datasource.url=jdbc:h2:mem:e2e-gravacao;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE',
     '--spring.datasource.username=sa','--spring.datasource.password=',`--fluxoos.bootstrap-password=${password}`,
-    '--fluxoos.demo=true','--fluxoos.cookie-secure=false','--fluxoos.seguranca.max-sessoes=20',
+    '--fluxoos.demo=true','--fluxoos.bootstrap-admin-master=false','--fluxoos.cookie-secure=false','--fluxoos.seguranca.max-sessoes=20',
     '--server.address=127.0.0.1',`--server.port=${port}`,'--debug=false'
   ],{cwd:root,windowsHide:true,stdio:['ignore','pipe','pipe']});
   app.stdout.pipe(log);app.stderr.pipe(log);app.on('error',error=>{console.error(error);});
@@ -43,7 +43,7 @@ async function session(fn){
   try{
     await page.goto(base);await page.locator('#login-form').waitFor();
     await page.locator('[name=usuario]').fill('admin');await page.locator('[name=senha]').fill(password);
-    await page.locator('#login-form button').click();await page.locator('#page-header h1').waitFor();
+    await page.locator('#login-form button').click();await page.getByRole('heading',{name:'Visão geral',exact:true}).waitFor();
     await fn(page);
     assert.deepEqual(errors,[],'Erros JavaScript no navegador');
   }finally{await encerrarSessao(page);await context.close();}
@@ -51,6 +51,27 @@ async function session(fn){
 async function encerrarSessao(page){
   try{await page.evaluate(async()=>{const csrf=sessionStorage.getItem('fluxoos.csrf');if(csrf)await fetch('/api/auth/logout',{method:'POST',headers:{'X-CSRF-Token':csrf}});});}catch{}
 }
+
+test('Resposta 401 atrasada da sessão anterior não encerra o novo login',()=>session(async page=>{
+  let liberar,recebida,retendo=true;
+  const bloqueio=new Promise(r=>liberar=r),retida=new Promise(r=>recebida=r);
+  await page.route('**/api/ordens',async route=>{
+    if(route.request().method()!=='GET'||!retendo){await route.continue();return;}
+    retendo=false;recebida();await bloqueio;
+    await route.fulfill({status:401,contentType:'application/json',body:'{"mensagem":"Sessão antiga expirada"}'});
+  });
+  try{
+    await page.locator('#refresh').click();await Promise.race([retida,delay(5000).then(()=>{throw new Error('Consulta não interceptada');})]);
+    await page.locator('#logout').click();await page.locator('#login-form').waitFor();
+    await page.locator('[name=usuario]').fill('admin');await page.locator('[name=senha]').fill(password);
+    await page.locator('#login-form button').click();await page.getByRole('heading',{name:'Visão geral',exact:true}).waitFor();
+    const respostaAntiga=page.waitForResponse(r=>r.url()===base+'/api/ordens'&&r.status()===401);
+    liberar();await respostaAntiga;
+    // Uma consulta posterior precisa continuar autenticada e recuperar a página.
+    await page.locator('#refresh').click();await page.getByRole('heading',{name:'Visão geral',exact:true}).waitFor();
+    assert.equal(await page.locator('#login-form').count(),0);
+  }finally{liberar();await page.unrouteAll({behavior:'wait'});}
+}));
 
 test('Equipe cria e edita múltiplas funções sem oferecer papéis administrativos',()=>session(async page=>{
   const login='multi-ui-'+crypto.randomUUID();

@@ -31,8 +31,9 @@ export function ordens(ctx) {
 }
 
 export async function detalheOrdem(ctx, id) {
+  const usuario = ctx.estado.usuario;
   const [ordem, historico] = await Promise.all([api(`/ordens/${id}`), api(`/ordens/${id}/historico`)]);
-  if (location.hash !== `#ordens/${id}`) return;
+  if (usuario !== ctx.estado.usuario || location.hash !== `#ordens/${id}`) return;
   const podeAtender = ctx.chefe || (ctx.temFuncao(ctx.estado.usuario, 'ROLE_SUPORTE_TECNICO', 'ROLE_SUPORTE_EXTERNO') && ordem.tecnicoId === ctx.estado.usuario.id);
   const emAndamento = ordem.situacao === 'EM_ANDAMENTO';
   const finalizada = ordem.situacao === 'CONCLUIDA';

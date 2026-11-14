@@ -12,7 +12,7 @@ $javaMajor = [int]$Matches[1]
 if ($javaMajor -eq 1) { $javaMajor = [int]$Matches[2] }
 if ($javaMajor -lt 25) { throw "JDK 25 ou superior necessario; encontrado Java $javaMajor." }
 $nomes = @('SPRING_PROFILES_ACTIVE', 'DATABASE_URL', 'DATABASE_USER', 'DATABASE_PASSWORD',
-    'COOKIE_SECURE', 'PORT', 'SERVER_ADDRESS', 'BOOTSTRAP_PASSWORD', 'DEMO_DATA',
+    'COOKIE_SECURE', 'PORT', 'SERVER_ADDRESS', 'BOOTSTRAP_PASSWORD', 'BOOTSTRAP_ADMIN_MASTER', 'DEMO_DATA',
     'MAX_SESSOES', 'LOGIN_MAX_ERROS', 'LOGIN_MAX_ERROS_IP', 'LOGIN_JANELA_MINUTOS',
     'LOGIN_BLOQUEIO_MINUTOS', 'LOGIN_MAX_IDENTIFICADORES', 'SEGURANCA_LIMPEZA_MS')
 $anteriores = @{}

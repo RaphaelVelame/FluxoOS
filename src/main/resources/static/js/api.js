@@ -1,12 +1,17 @@
 let csrf = sessionStorage.getItem('fluxoos.csrf');
+let geracaoSessao = 0;
+
+export function sessaoAtual() { return geracaoSessao; }
 
 export function salvarCsrf(valor) {
+  if (csrf !== valor) geracaoSessao++;
   csrf = valor;
   if (valor) sessionStorage.setItem('fluxoos.csrf', valor);
   else sessionStorage.removeItem('fluxoos.csrf');
 }
 
 export async function api(caminho, { method = 'GET', body, key } = {}) {
+  const geracao = geracaoSessao;
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (method !== 'GET' && csrf) headers['X-CSRF-Token'] = csrf;
@@ -16,6 +21,11 @@ export async function api(caminho, { method = 'GET', body, key } = {}) {
   });
   const tipo = resposta.headers.get('content-type') || '';
   const dados = tipo.includes('application/json') ? await resposta.json() : null;
+  if (geracao !== geracaoSessao) {
+    const erro = new Error('Sua sessão foi alterada. Atualize os dados.');
+    erro.name = 'SessaoAlteradaError';
+    throw erro;
+  }
   if (!resposta.ok) {
     if (resposta.status === 401 && caminho !== '/auth/login') {
       const tinhaSessao = !!csrf;
