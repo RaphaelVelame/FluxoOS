@@ -11,7 +11,10 @@ import java.util.List;
 @Service @Transactional
 public class EmpresaService {
     private final EmpresaRepository empresas;
-    public EmpresaService(EmpresaRepository empresas) { this.empresas = empresas; }
+    private final AuditoriaService auditoria;
+    public EmpresaService(EmpresaRepository empresas, AuditoriaService auditoria) {
+        this.empresas = empresas; this.auditoria = auditoria;
+    }
     public record Resposta(long id, String nome) { static Resposta de(Empresa e) { return new Resposta(e.getId(), e.getNome()); } }
     @Transactional(readOnly = true)
     public List<Resposta> listar(Usuario ator) {
@@ -20,6 +23,8 @@ public class EmpresaService {
     }
     public Resposta criar(Usuario ator, String nome) {
         EscopoEmpresa.exigirRole(ator, Role.ROLE_ADMIN_MASTER);
-        return Resposta.de(empresas.save(new Empresa(nome)));
+        Empresa empresa = empresas.save(new Empresa(nome));
+        auditoria.registrar(null, ator.getId(), "EMPRESA_CRIADA", "Empresa criada: " + empresa.getNome() + " (empresaId=" + empresa.getId() + ").");
+        return Resposta.de(empresa);
     }
 }

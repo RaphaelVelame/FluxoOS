@@ -1,5 +1,5 @@
 import { api, salvarCsrf } from './api.js';
-import { nomesFuncoes, temFuncao, icon, escape, toast } from './components.js';
+import { nomesFuncoes, temFuncao, icon, escape, toast, fecharModal } from './components.js';
 import { dashboard } from './views/dashboard.js';
 import { ordens, detalheOrdem, novaOrdem } from './views/orders.js';
 import { estoque } from './views/inventory.js';
@@ -81,7 +81,7 @@ async function aposGravar(mensagem, destino) {
 }
 
 function login() {
-  document.querySelector('#modal').close();
+  fecharModal();
   document.querySelector('#app').innerHTML = `<main class="login-layout" id="main"><section class="login-story"><a class="brand" href="#inicio"><span class="brand-mark">F</span>Fluxo<span>OS</span></a><div class="login-message"><span class="eyebrow">MENOS DISTÂNCIA. MAIS SOLUÇÃO.</span><h1>O trabalho flui.<br>A equipe avança.</h1><p>Ordens de serviço, materiais e pessoas conectados do primeiro chamado à última assinatura.</p><div class="login-flow"><span>${icon('clipboard')} Organize</span><span>${icon('box')} Acompanhe</span><span>${icon('check')} Resolva</span></div></div><small>Gestão de serviços feita para o dia a dia.</small></section>
     <section class="login-form-area"><div class="mobile-brand brand"><span class="brand-mark">F</span>Fluxo<span>OS</span></div><div class="login-form-card"><span class="eyebrow">SEU ESPAÇO DE TRABALHO</span><h2>Bom ter você por aqui.</h2><p>Entre para acompanhar sua operação.</p><form id="login-form" class="stack"><label>Usuário<input name="usuario" autocomplete="username" required maxlength="80" placeholder="Seu nome de usuário" autocapitalize="none" spellcheck="false"></label><label>Senha<input name="senha" type="password" autocomplete="current-password" required maxlength="1024" placeholder="Digite sua senha"></label><p class="form-error" role="alert"></p><button class="button full-width" type="submit">Entrar no FluxoOS ${icon('arrow')}</button></form><p class="login-help">Precisa de acesso? Fale com a chefia da sua equipe.</p></div><small class="login-footer">FluxoOS · Cada etapa, sob controle.</small></section></main>`;
   document.querySelector('#login-form').onsubmit = async evento => {
@@ -145,7 +145,7 @@ async function rota() {
     } else if (nome === 'ordens') ordens(contexto);
     else if (nome === 'estoque' && contexto.master) pagina('<div class="empty-state"><h2>Consulte o estoque da empresa</h2><p>Use uma conta operacional da empresa para consultar seus materiais e movimentos.</p><a class="button secondary" href="#inicio">Voltar à visão global</a></div>', { titulo: 'Estoque por empresa', subtitulo: 'O acesso master possui escopo global' });
     else if (nome === 'estoque') estoque(contexto);
-    else if (nome === 'equipe') equipe(contexto);
+    else if (nome === 'equipe') equipe(contexto, id && /^\d+$/.test(id) ? Number(id) : null);
     else if (nome === 'conta') conta(contexto);
     else dashboard(contexto);
     return true;

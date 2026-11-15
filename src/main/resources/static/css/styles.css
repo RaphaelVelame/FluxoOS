@@ -1358,6 +1358,25 @@ progress::-moz-progress-bar {
   font-weight:650
 }
 
+.platform-companies { margin-bottom:20px }
+.company-list { padding:0 20px 20px }
+.company-row { display:flex; justify-content:space-between; gap:20px; padding:20px 0; border-top:1px solid var(--border) }
+.company-copy { min-width:0 }
+.company-copy h3 { margin:0 0 6px; font-size:16px; overflow-wrap:anywhere }
+.company-copy p { color:var(--muted); font-size:12px; margin:0 0 10px }
+.company-actions { display:flex; flex-direction:column; align-items:flex-end; justify-content:center; gap:12px; flex-shrink:0 }
+.company-user-filters>label:first-child { flex:1; min-width:180px }
+.company-user-filters>.search-field { flex:2; min-width:180px }
+.person-card { min-width:0 }
+.person-card .person-company { color:var(--text); overflow-wrap:anywhere }
+.person-card>.button+.button { margin-top:8px }
+.modal-body fieldset .check-filter { white-space:normal }
+@media(max-width:600px) {
+  .company-row { flex-direction:column; gap:14px }
+  .company-actions { align-items:stretch }
+  .company-actions .text-link { align-self:flex-start }
+}
+
 .role-label {
   display:block;
   color:#738875;

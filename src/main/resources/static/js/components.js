@@ -33,6 +33,12 @@ export const vazio = (titulo, descricao, simbolo = 'clipboard') => `<div class="
 export const campo = (rotulo, nome, tipo = 'text', extras = '') => `<label>${rotulo}<input name="${nome}" type="${tipo}" required ${extras}></label>`;
 
 let timer;
+export function fecharModal() {
+  const el = document.querySelector('#modal');
+  el.close();
+  el.replaceChildren();
+}
+
 export function toast(mensagem, erro = false) {
   const el = document.querySelector('#toast');
   el.textContent = mensagem;
@@ -50,8 +56,8 @@ export function modal(titulo, conteudo, { aoEnviar, aoSalvar, textoBotao = 'Salv
   el.innerHTML = `<div class="modal-header"><h2 id="modal-title">${escape(titulo)}</h2><button class="icon-button" type="button" data-close aria-label="Fechar">${icon('close')}</button></div>
     <form class="modal-form"><div class="modal-body">${conteudo}<p class="form-error" role="alert"></p></div>
     ${aoEnviar ? `<div class="modal-footer"><button type="button" class="button secondary" data-close>Cancelar</button><button class="button" type="submit">${escape(textoBotao)}</button></div>` : ''}</form>`;
-  el.querySelectorAll('[data-close]').forEach(botao => { botao.onclick = () => { if (!enviando) el.close(); }; });
-  el.oncancel = evento => { if (enviando) evento.preventDefault(); };
+  el.querySelectorAll('[data-close]').forEach(botao => { botao.onclick = () => { if (!enviando) fecharModal(); }; });
+  el.oncancel = evento => { evento.preventDefault(); if (!enviando) fecharModal(); };
   if (aoEnviar) {
     const form = el.querySelector('form');
     form.onsubmit = async evento => {
@@ -74,7 +80,7 @@ export function modal(titulo, conteudo, { aoEnviar, aoSalvar, textoBotao = 'Salv
       if (sessao !== sessaoAtual()) return;
       confirmado = true;
       enviando = false;
-      if (el.contains(form)) el.close();
+      if (el.contains(form)) fecharModal();
       await aoSalvar?.(resultado);
     };
   }

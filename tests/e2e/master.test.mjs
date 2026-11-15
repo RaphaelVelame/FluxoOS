@@ -63,7 +63,7 @@ async function api(ac,rota,body){
 }
 async function sair(ac){await fetch(base+'/api/auth/logout',{method:'POST',headers:{Cookie:ac.cookie,'X-CSRF-Token':ac.csrf}});}
 async function login(page,usuario='admin'){
-  await page.locator('#login-form').waitFor();await page.locator('[name=usuario]').fill(usuario);await page.locator('[name=senha]').fill(password);
+  await page.locator('#login-form').waitFor();await page.locator('#login-form [name=usuario]').fill(usuario);await page.locator('#login-form [name=senha]').fill(password);
   await page.locator('#login-form button').click();
 }
 async function sessao(fn){
@@ -72,6 +72,18 @@ async function sessao(fn){
   try{await page.goto(base);await login(page);await fn(page);assert.deepEqual(erros,[]);}
   finally{try{await page.evaluate(async()=>{const csrf=sessionStorage.getItem('fluxoos.csrf');if(csrf)await fetch('/api/auth/logout',{method:'POST',headers:{'X-CSRF-Token':csrf}});});}catch{}await context.close();}
 }
+async function dados(page,rota){const r=await page.request.get(base+'/api'+rota);assert.equal(r.status(),200);return r.json();}
+async function gravar(page,rota,body,method='POST'){
+  const csrf=await page.evaluate(()=>sessionStorage.getItem('fluxoos.csrf'));
+  const r=await page.request.fetch(base+'/api'+rota,{method,data:body,headers:{'X-CSRF-Token':csrf,'Idempotency-Key':crypto.randomUUID()}});
+  assert.ok(r.ok(),`HTTP ${r.status()}: ${rota}`);return (await r.body()).length?r.json():null;
+}
+async function aguardarInicio(page){await page.getByRole('heading',{name:'Visão global',exact:true}).waitFor();}
+async function preencherUsuario(page,nome,usuario){
+  await page.locator('#modal [name=nome]').fill(nome);await page.locator('#modal [name=login]').fill(usuario);await page.locator('#modal [name=senha]').fill(password);
+}
+async function falharConsultas(page){await page.route('**/api/**',r=>r.request().method()==='GET'?r.fulfill({status:503,contentType:'application/json',body:'{"mensagem":"Consulta indisponível no ensaio"}'}):r.continue());}
+async function recuperar(page){await page.locator('#retry-sync:not([disabled])').waitFor();await page.unrouteAll({behavior:'wait'});await page.locator('#retry-sync').click();await page.locator('#retry-sync').waitFor({state:'hidden'});}
 test('Master entra, atualiza e recarrega sem requisitar estoque de uma empresa',()=>sessao(async page=>{
   const proibidas=[];page.on('request',r=>{if(['/api/materiais','/api/movimentos','/api/estoques'].includes(new URL(r.url()).pathname))proibidas.push(r.url());});
   await page.getByRole('heading',{name:'Visão global',exact:true}).waitFor();
@@ -113,4 +125,111 @@ test('Resposta de OS da conta anterior não aparece após entrar em outra empres
     assert.equal(await page.getByText('Chamado da empresa A',{exact:true}).count(),0);
     assert.equal(await page.getByRole('heading',{name:'Página indisponível',exact:true}).count(),1);
   }finally{liberar();await page.unrouteAll({behavior:'wait'});}
+}));
+
+test('Master cadastra empresa e administrador pela interface e o novo acesso fica isolado',()=>sessao(async page=>{
+  await aguardarInicio(page);
+  const nome='Oficina & Rede '+crypto.randomUUID(),usuario='admin-ui-'+crypto.randomUUID();
+  await page.locator('#primary-action').click();await page.locator('#modal [name=nome]').fill(nome);
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await aguardarInicio(page);
+  const empresa=(await dados(page,'/plataforma/empresas')).find(e=>e.nome===nome);assert.ok(empresa);
+  const card=page.locator(`[data-company="${empresa.id}"]`);await card.waitFor();
+  assert.ok((await card.textContent()).includes('Sem administrador ativo'));
+  await card.locator('[data-add-admin]').click();await preencherUsuario(page,'Administrador da oficina','admin-a');
+  assert.equal(await page.locator('#modal input[value="ROLE_ADMIN_MASTER"]').count(),0);
+  assert.equal(await page.locator('#modal select[name=empresaId]').count(),0);
+  assert.equal(await page.locator('#modal input[type=checkbox][value="ROLE_ADMIN_EMPRESA"]').isDisabled(),true);
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal .form-error').filter({hasText:'duplicado'}).waitFor();
+  assert.equal(await page.locator('#modal [name=nome]').inputValue(),'Administrador da oficina');
+  assert.ok((await page.locator('#modal').textContent()).includes(nome));
+  await page.locator('#modal [name=login]').fill(usuario);await page.locator('#modal button[type=submit]').click();
+  await page.locator('#modal').waitFor({state:'hidden'});await page.locator('#team-company').waitFor();
+  assert.equal(await page.locator('#modal [name=senha]').count(),0);
+  assert.equal(await page.locator('#team-company').inputValue(),String(empresa.id));
+  const conta=(await dados(page,'/usuarios')).find(u=>u.login===usuario);
+  assert.equal(conta.empresaId,empresa.id);assert.deepEqual(conta.roles,['ROLE_ADMIN_EMPRESA']);
+  assert.equal(await page.locator('.person-card').count(),1);
+  await page.locator('#logout').click();await login(page,usuario);
+  await page.getByRole('heading',{name:'Visão geral',exact:true}).waitFor();
+  assert.equal(await page.locator('.company-list').count(),0);
+  const usuarios=await dados(page,'/usuarios');assert.ok(usuarios.every(u=>u.empresaId===empresa.id));
+  assert.equal((await dados(page,'/ordens')).length,0);
+  await page.evaluate(()=>location.hash='equipe');await page.locator('.team-grid').waitFor();
+  assert.equal(await page.locator('#team-company').count(),0);
+  await page.locator('#primary-action').click();
+  assert.equal(await page.locator('#modal input[value="ROLE_ADMIN_EMPRESA"]').count(),0);
+  assert.equal(await page.locator('#modal input[value="ROLE_ADMIN_MASTER"]').count(),0);
+}));
+
+test('Master filtra, edita e altera status de administradores mantendo o último ativo',()=>sessao(async page=>{
+  await aguardarInicio(page);
+  const empresa=await gravar(page,'/plataforma/empresas',{nome:'Gestão de acessos '+crypto.randomUUID()});
+  const logins=['controle-a-'+crypto.randomUUID(),'controle-b-'+crypto.randomUUID()];
+  const contas=[];
+  for(const usuario of logins)contas.push(await gravar(page,'/usuarios',{login:usuario,nome:usuario,senha:password,empresaId:empresa.id,roles:['ROLE_ADMIN_EMPRESA']}));
+  const sessaoAntiga=await acesso(logins[0]);
+  await page.locator('#refresh').click();await aguardarInicio(page);
+  await page.locator(`[data-company="${empresa.id}"] a`).click();await page.locator('#team-company').waitFor();
+  assert.equal(await page.locator('.person-card').count(),2);
+  await page.locator(`[data-edit-user="${contas[0].id}"]`).click();
+  assert.equal(await page.locator('#modal select[name=empresaId]').count(),0);
+  await page.locator('#modal [name=nome]').fill('Administrador atualizado');await page.locator('#modal input[value="ROLE_SUPORTE_TECNICO"]').check();
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await page.locator(`[data-user-status="${contas[0].id}"]`).waitFor();
+  const atual=(await dados(page,'/usuarios')).find(u=>u.id===contas[0].id);
+  assert.equal(atual.empresaId,empresa.id);assert.ok(atual.roles.includes('ROLE_SUPORTE_TECNICO'));
+  assert.equal((await fetch(base+'/api/auth/me',{headers:{Cookie:sessaoAntiga.cookie}})).status,401);
+  await page.locator(`[data-user-status="${contas[0].id}"]`).click();await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await page.locator(`[data-user-status="${contas[1].id}"]:disabled`).waitFor();
+  assert.equal((await dados(page,'/usuarios')).find(u=>u.id===contas[0].id).ativo,false);
+  await page.locator(`[data-edit-user="${contas[1].id}"]`).click();assert.equal(await page.locator('#modal input[type=checkbox][value="ROLE_ADMIN_EMPRESA"]').isDisabled(),true);
+  await page.locator('#modal').getByRole('button',{name:'Fechar',exact:true}).click();
+  await page.locator(`[data-user-status="${contas[0].id}"]`).click();await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await page.locator(`[data-user-status="${contas[1].id}"]:not([disabled])`).waitFor();
+  await page.locator('#team-company').selectOption('');
+  const eu=await dados(page,'/auth/me');assert.equal(await page.locator(`[data-user="${eu.id}"] button`).count(),0);
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:path.join(root,'target/e2e/master-usuarios-mobile.png'),fullPage:true});
+}));
+
+test('Cadastro de empresa confirmado oferece recuperação sem repetir o POST',()=>sessao(async page=>{
+  await aguardarInicio(page);const nome='Empresa confirmada '+crypto.randomUUID();let posts=0;
+  page.on('request',r=>{if(r.method()==='POST'&&r.url()===base+'/api/plataforma/empresas')posts++;});
+  await page.locator('#primary-action').click();await page.locator('#modal [name=nome]').fill(nome);await falharConsultas(page);
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await recuperar(page);await aguardarInicio(page);
+  assert.equal(posts,1);assert.equal((await dados(page,'/plataforma/empresas')).filter(e=>e.nome===nome).length,1);
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:path.join(root,'target/e2e/master-empresas-mobile.png'),fullPage:true});
+}));
+
+test('Administrador confirmado não é cadastrado novamente após falha de consulta',()=>sessao(async page=>{
+  await aguardarInicio(page);const usuario='admin-confirmado-'+crypto.randomUUID();let posts=0;
+  page.on('request',r=>{if(r.method()==='POST'&&r.url()===base+'/api/usuarios')posts++;});
+  await page.locator(`[data-add-admin="${empresas[1].id}"]`).click();await preencherUsuario(page,'Administrador confirmado',usuario);await falharConsultas(page);
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});await recuperar(page);
+  await page.locator('#team-company').waitFor();
+  assert.equal(posts,1);const contas=(await dados(page,'/usuarios')).filter(u=>u.login===usuario);assert.equal(contas.length,1);assert.equal(contas[0].empresaId,empresas[1].id);
+}));
+
+test('Master escolhe a empresa do funcionário e cancelar limpa as credenciais',()=>sessao(async page=>{
+  await aguardarInicio(page);
+  await page.evaluate(id=>location.hash=`equipe/${id}`,empresas[0].id);await page.locator('#team-company').waitFor();
+  await page.locator('#primary-action').click();await preencherUsuario(page,'Cadastro cancelado','cancelado-'+crypto.randomUUID());
+  assert.equal(await page.locator('#modal [name=empresaId]').inputValue(),String(empresas[0].id));
+  await page.keyboard.press('Escape');await page.locator('#modal').waitFor({state:'hidden'});
+  assert.equal(await page.locator('#modal input').count(),0);
+  await page.locator('#primary-action').click();
+  const usuario='funcionario-master-'+crypto.randomUUID();
+  await preencherUsuario(page,'Funcionário de outra empresa',usuario);
+  await page.locator('#modal [name=empresaId]').selectOption(String(empresas[1].id));
+  await page.locator('#modal input[value="ROLE_ESTOQUISTA"]').check();
+  assert.equal(await page.locator('#modal input[value="ROLE_ADMIN_MASTER"]').count(),0);
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await page.waitForFunction(id=>document.querySelector('#team-company')?.value===String(id),empresas[1].id);
+  const criada=(await dados(page,'/usuarios')).find(u=>u.login===usuario);
+  assert.equal(criada.empresaId,empresas[1].id);
+  assert.deepEqual(new Set(criada.roles),new Set(['ROLE_SUPORTE_EXTERNO','ROLE_ESTOQUISTA']));
 }));

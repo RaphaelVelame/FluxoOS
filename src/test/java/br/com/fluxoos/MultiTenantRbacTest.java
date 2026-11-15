@@ -34,6 +34,7 @@ class MultiTenantRbacTest {
     @Autowired EmpresaRepository empresas; @Autowired UsuarioRepository usuarios;
     @Autowired OrdemServicoRepository ordens; @Autowired NotificacaoRepository notificacoes;
     @Autowired OrdemServicoService servico; @Autowired UsuarioService usuarioService;
+    @Autowired EmpresaService empresaService;
     @Autowired EstoqueService estoque; @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transacoes;
     Empresa a,b; Usuario admin,adminB,misto,externo,estoquista,supervisor,master;
@@ -148,6 +149,26 @@ class MultiTenantRbacTest {
         assertThatThrownBy(()->jdbc.update("UPDATE ordens SET equipe_id=? WHERE id=?",adminB.getId(),os)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         assertThatThrownBy(()->jdbc.update("INSERT INTO usuario_roles(usuario_id,role) VALUES(?,'ROLE_INVENTADA')",admin.getId())).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         assertThatThrownBy(()->jdbc.update("INSERT INTO notificacoes(id,empresa_id,ordem_id,destinatario_id,mensagem,criado_em,lida) VALUES(nextval('sequencia_ids'),?,?,?,'Cruzada',CURRENT_TIMESTAMP,false)",a.getId(),os,adminB.getId())).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+    @Test void cadastrarEmpresaExigeMasterECsrfEAuditoriaParticipaDaMesmaTransacao() throws Exception {
+        long antes=empresas.count();
+        var ac=login(master);
+        var semCsrf=executar(post("/api/plataforma/empresas").cookie(ac.cookie())
+                .contentType("application/json").content(json.writeValueAsBytes(Map.of("nome","Sem CSRF")))).andReturn().getResponse();
+        assertThat(semCsrf.getStatus()).isEqualTo(403);
+        enviar(post("/api/plataforma/empresas"),Map.of("nome","Empresa indevida"),login(admin),403);
+        assertThat(empresas.count()).isEqualTo(antes);
+        var criada=enviar(post("/api/plataforma/empresas"),Map.of("nome","Empresa auditada"),ac,201);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM auditoria WHERE usuario_id=? AND tipo='EMPRESA_CRIADA' AND detalhes LIKE ?",Long.class,master.getId(),"%empresaId="+criada.get("id").asLong()+"%" )).isEqualTo(1L);
+        long empresasAntes=empresas.count();
+        long eventosAntes=jdbc.queryForObject("SELECT count(*) FROM auditoria",Long.class);
+        new TransactionTemplate(transacoes).executeWithoutResult(status -> {
+            empresaService.criar(master,"Empresa revertida");empresas.flush();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM auditoria",Long.class)).isEqualTo(eventosAntes+1);
+            status.setRollbackOnly();
+        });
+        assertThat(empresas.count()).isEqualTo(empresasAntes);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM auditoria",Long.class)).isEqualTo(eventosAntes);
     }
     record Acesso(Cookie cookie,String csrf) {}
     Acesso login(Usuario u) throws Exception {

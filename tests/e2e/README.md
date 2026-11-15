@@ -23,3 +23,8 @@ As regressões de sessão retêm respostas até depois de logout e novo login. U
 pode encerrar a sessão nova, e os detalhes de uma OS da conta anterior não podem reaparecer
 após entrar em outra empresa. O ensaio master verifica entrada, atualização, recarga da página,
 consulta global e ausência de chamadas às rotas de estoque que exigem tenant operacional.
+
+A gestão visual master também é exercitada com cadastros sintéticos: empresa, administrador,
+primeiro login, seleção de empresa para funcionários, edição, revogação de sessão, status,
+proteção do último administrador e recuperação de consultas após gravações confirmadas.
+Cancelar ou concluir um formulário deve remover seus campos e credenciais da página.
