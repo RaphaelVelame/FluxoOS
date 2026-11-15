@@ -100,3 +100,8 @@ O importador também passou no cluster descartável. Um backup local foi restaur
 cluster e atualizado para V18 pelo aplicativo: contagens e fingerprints das dez tabelas legadas
 verificadas permaneceram iguais (materiais, estoques, ordens, itens, movimentos, usuários, empresas,
 roles, notificações e idempotência). A tela móvel da OS foi inspecionada sem rolagem horizontal.
+
+O CI identificou uma corrida na preparação da suíte: HTTP disponível não significa que o
+ApplicationRunner já confirmou o administrador e os dados demo. A suíte operacional agora confirma
+o acesso inicial antes de abrir o navegador e encerra essa sessão de sondagem. As tentativas limitadas
+existem somente na preparação; os cenários de login mantêm suas verificações sem repetição automática.

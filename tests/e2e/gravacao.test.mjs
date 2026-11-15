@@ -32,6 +32,21 @@ before(async()=>{
     await delay(500);
   }
   assert.ok(ready,'Servidor não iniciou');
+  // O HTTP abre antes do commit do ApplicationRunner que cria admin e dados demo.
+  // Sondar somente o bootstrap, abaixo do limite de bloqueio; os testes de login não repetem tentativas.
+  let inicial;
+  for(let i=0;i<3;i++){
+    inicial=await fetch(base+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({usuario:'admin',senha:password}),signal:AbortSignal.timeout(5000)});
+    if(inicial.status!==401||i===2)break;
+    await inicial.arrayBuffer();await delay(750);
+  }
+  assert.equal(inicial.status,200,'O administrador do banco descartável precisa estar disponível antes dos testes');
+  const acessoInicial=await inicial.json();
+  const saidaInicial=await fetch(base+'/api/auth/logout',{method:'POST',headers:{
+    Cookie:inicial.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':acessoInicial.csrf,
+  }});
+  assert.equal(saidaInicial.status,200,'A sondagem inicial precisa liberar a sessão');
   browser=await chromium.launch({headless:true,...(process.env.BROWSER_CHANNEL?{channel:process.env.BROWSER_CHANNEL}:{})});
 }, {timeout:90000});
 after(async()=>{await browser?.close();if(app?.pid&&app.exitCode===null){const closed=new Promise(resolve=>app.once('exit',resolve));app.kill();await closed;}log?.end();});
