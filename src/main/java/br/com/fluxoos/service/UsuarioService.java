@@ -3,7 +3,6 @@ package br.com.fluxoos.service;
 import br.com.fluxoos.repository.*;
 import br.com.fluxoos.seguranca.Identificadores;
 import br.com.fluxoos.seguranca.SenhaPbkdf2;
-import br.com.fluxoos.dto.Contratos.UsuarioView;
 import br.com.fluxoos.entity.*;
 import br.com.fluxoos.enums.*;
 import org.springframework.stereotype.Service;

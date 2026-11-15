@@ -1,7 +1,5 @@
 package br.com.fluxoos.seguranca;
 
-import br.com.fluxoos.seguranca.PoliticaBloqueio;
-
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;

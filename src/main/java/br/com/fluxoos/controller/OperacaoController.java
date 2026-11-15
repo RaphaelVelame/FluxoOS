@@ -18,13 +18,12 @@ import static br.com.fluxoos.dto.Contratos.*;
 public class OperacaoController {
     private final OrdemServicoService ordens;
     private final EstoqueService estoque;
-    private final UsuarioService usuarios;
     private final AuditoriaService auditoria;
     private final ClienteService clientes;
 
     public OperacaoController(OrdemServicoService ordens, EstoqueService estoque,
-                              UsuarioService usuarios, AuditoriaService auditoria, ClienteService clientes) {
-        this.ordens = ordens; this.estoque = estoque; this.usuarios = usuarios; this.auditoria = auditoria;
+                              AuditoriaService auditoria, ClienteService clientes) {
+        this.ordens = ordens; this.estoque = estoque; this.auditoria = auditoria;
         this.clientes = clientes;
     }
 
