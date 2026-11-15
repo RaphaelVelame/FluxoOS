@@ -108,7 +108,7 @@ test('Suporte técnico acumulado com estoquista pode criar OS e recebe controles
   await route(page,'equipe','.team-grid');assert.equal(await page.locator('#primary-action').count(),0);
 }));
 async function route(page,hash,selector){await page.evaluate(h=>location.hash=h,hash);await page.locator(selector).waitFor();}
-async function newOrder(page,problem){await route(page,'ordens','#orders-list');await page.locator('#primary-action').click();await page.locator('#modal [name=solicitante]').fill('Teste E2E');await page.locator('#modal [name=local]').fill('Ambiente isolado');await page.locator('#modal [name=problema]').fill(problem);}
+async function newOrder(page,problem){await route(page,'ordens','#orders-list');await page.locator('#primary-action').click();await page.locator('#modal [name=solicitante]').fill('Teste E2E');await page.locator('#modal [name=local]').fill('Ambiente isolado');await page.locator('#modal [name=problema]').fill(problem);await page.locator('#modal [name=clienteId]').selectOption('INTERNO');}
 async function failReads(page){await page.route('**/api/**',async r=>{if(r.request().method()==='GET')await r.fulfill({status:503,contentType:'application/json',body:'{"mensagem":"Falha simulada de consulta"}'});else await r.continue();});}
 async function recovery(page){await page.locator('#modal').waitFor({state:'hidden'});await page.locator('#retry-sync:not([disabled])').waitFor();await page.unrouteAll({behavior:'wait'});await page.locator('#retry-sync').click();await page.locator('#retry-sync').waitFor({state:'hidden'});}
 async function data(page,url){const r=await page.request.get(base+'/api'+url);assert.equal(r.status(),200);return r.json();}
@@ -131,14 +131,17 @@ test('Perda da resposta do POST permite repetir sem criar outra OS',()=>session(
 }));
 
 async function write(page,url,body,method='POST'){
+  if(url==='/estoques'&&body.tipo==='CLIENTE'&&body.clienteId==null) {
+    body={...body,clienteId:(await write(page,'/clientes',{codigo:crypto.randomUUID(),nome:body.nome})).id};
+  }
   const csrf=await page.evaluate(()=>sessionStorage.getItem('fluxoos.csrf'));
   const response=await page.request.fetch(base+'/api'+url,{method,headers:{'X-CSRF-Token':csrf,'Idempotency-Key':crypto.randomUUID()},...(body!==undefined?{data:body}:{})});
   assert.ok(response.ok(),`${method} ${url}: ${response.status()} ${await response.text()}`);
   return response.headers()['content-type']?.includes('application/json')?response.json():null;
 }
 async function material(page){const m=await write(page,'/materiais',{codigo:crypto.randomUUID(),nome:'Material de teste',unidade:'un',minimo:0});await write(page,`/materiais/${m.id}/movimentos`,{tipo:'ENTRADA',variacao:10,observacao:'Carga isolada'});return m;}
-async function order(page,{start=false,report=false}={}){
-  const o=await write(page,'/ordens',{solicitante:'E2E',local:'Teste',problema:'Atendimento '+crypto.randomUUID(),prioridade:'MEDIA'});
+async function order(page,{start=false,report=false,clienteId=null}={}){
+  const o=await write(page,'/ordens',{solicitante:'E2E',local:'Teste',problema:'Atendimento '+crypto.randomUUID(),prioridade:'MEDIA',clienteId});
   const users=await data(page,'/usuarios');await write(page,`/ordens/${o.id}/atribuicao`,{tecnicoId:users.find(u=>u.roles?.includes('ROLE_SUPORTE_EXTERNO')&&u.ativo).id});
   if(start)await write(page,`/ordens/${o.id}/inicio`);
   if(report)await write(page,`/ordens/${o.id}/relato`,{relato:'Relato prévio'},'PUT');
@@ -253,7 +256,7 @@ test('Consulta iniciada antes da gravação não apaga sua confirmação',()=>se
   await page.route('**/api/materiais',async r=>{if(first){first=false;started();await held;}await r.continue();});
   try{
     await page.locator('#refresh').click();await intercepted;
-    await page.locator('#primary-action').click();await page.locator('#modal [name=solicitante]').fill('E2E');await page.locator('#modal [name=local]').fill('Teste');await page.locator('#modal [name=problema]').fill(problem);
+    await page.locator('#primary-action').click();await page.locator('#modal [name=solicitante]').fill('E2E');await page.locator('#modal [name=local]').fill('Teste');await page.locator('#modal [name=problema]').fill(problem);await page.locator('#modal [name=clienteId]').selectOption('INTERNO');
     const saved=page.waitForResponse(r=>r.request().method()==='POST'&&r.url()===base+'/api/ordens');
     await page.locator('#modal button[type=submit]').click();assert.equal((await saved).status(),201);release();
     await page.locator('#assign').waitFor();assert.match(await page.locator('#toast').innerText(),/criada/);assert.equal((await data(page,'/ordens')).filter(o=>o.problema===problem).length,1);
@@ -280,9 +283,63 @@ test('Capacidade de sessões é informada no login e logout libera nova entrada'
   }
 });
 
+test('Cadastro visual de cliente vincula a nova OS e preserva o formulário em duplicidade',()=>session(async page=>{
+  const nome='Cliente visual '+crypto.randomUUID(),codigo=crypto.randomUUID();
+  await route(page,'clientes','#clients-list');await page.locator('#primary-action').click();
+  await page.locator('#modal [name=codigo]').fill(codigo);await page.locator('#modal [name=nome]').fill(nome);
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await page.getByRole('heading',{name:nome,exact:true}).waitFor();
+  const cliente=(await data(page,'/clientes')).find(c=>c.codigo===codigo);assert.ok(cliente);
+  await page.locator('#primary-action').click();
+  await page.locator('#modal [name=codigo]').fill(codigo);await page.locator('#modal [name=nome]').fill('Duplicado');
+  await page.locator('#modal button[type=submit]').click();
+  await page.waitForFunction(()=>!!document.querySelector('#modal .form-error')?.textContent);
+  assert.equal(await page.locator('#modal [name=nome]').inputValue(),'Duplicado');
+  await page.locator('#modal').getByRole('button',{name:'Fechar',exact:true}).click();
+  const problema='OS cliente visual '+crypto.randomUUID();await newOrder(page,problema);
+  await page.locator('#modal [name=clienteId]').selectOption(String(cliente.id));
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await page.locator('.info-grid').waitFor();assert.match(await page.locator('.info-grid').innerText(),new RegExp(nome));
+  const ordem=(await data(page,'/ordens')).find(o=>o.problema===problema);
+  assert.equal(ordem.clienteId,cliente.id);assert.equal(ordem.tipoAtendimento,'CLIENTE');
+}));
+
+test('OS do cliente filtra materiais e servidor bloqueia tentativa direta sem alterar saldo',()=>session(async page=>{
+  const cliente=await write(page,'/clientes',{codigo:crypto.randomUUID(),nome:'Cliente autorizado '+crypto.randomUUID()});
+  const outro=await write(page,'/clientes',{codigo:crypto.randomUUID(),nome:'Outro cliente '+crypto.randomUUID()});
+  const empresa=await write(page,'/estoques',{codigo:crypto.randomUUID(),nome:'Empresa para atendimento',tipo:'EMPRESA'});
+  const dono=await write(page,'/estoques',{codigo:crypto.randomUUID(),nome:'Custódia do cliente',tipo:'CLIENTE',clienteId:cliente.id});
+  const alheio=await write(page,'/estoques',{codigo:crypto.randomUUID(),nome:'Custódia alheia',tipo:'CLIENTE',clienteId:outro.id});
+  const proprio=await materialDoEstoque(page,empresa.id),permitido=await materialDoEstoque(page,dono.id),bloqueado=await materialDoEstoque(page,alheio.id),sem=await material(page);
+  const os=await order(page,{start:true,clienteId:cliente.id});
+  await page.locator('#refresh').click();await page.locator('#refresh:not([disabled])').waitFor();
+  await route(page,`ordens/${os.id}`,'#consume');await page.locator('#consume').click();
+  const ids=await page.locator('#modal [name=materialId] option').evaluateAll(os=>os.map(o=>Number(o.value)));
+  assert.ok(ids.includes(proprio.id)&&ids.includes(permitido.id));assert.ok(!ids.includes(bloqueado.id)&&!ids.includes(sem.id));
+  const csrf=await page.evaluate(()=>sessionStorage.getItem('fluxoos.csrf'));
+  for(const m of [bloqueado,sem]) {
+    const r=await page.request.post(base+`/api/ordens/${os.id}/materiais`,{headers:{'X-CSRF-Token':csrf,'Idempotency-Key':crypto.randomUUID()},data:{materialId:m.id,quantidade:1,observacao:'Tentativa fora da seleção'}});
+    assert.equal(r.status(),409);assert.equal((await data(page,'/materiais')).find(x=>x.id===m.id).quantidade,10);
+  }
+  assert.equal((await data(page,`/ordens/${os.id}`)).itens.length,0);
+  await page.locator('#modal [name=materialId]').selectOption(String(permitido.id));await page.locator('#modal [name=quantidade]').fill('2');await page.locator('#modal [name=observacao]').fill('Uso permitido');
+  await page.locator('#modal button[type=submit]').click();await page.locator('#modal').waitFor({state:'hidden'});
+  assert.equal((await data(page,'/materiais')).find(x=>x.id===permitido.id).quantidade,8);
+  await page.setViewportSize({width:390,height:844});await page.locator('.detail-heading').waitFor();
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Tela de OS deve caber no celular');
+  await page.screenshot({path:path.join(root,'target/e2e/os-cliente-mobile.png'),fullPage:true});
+}));
+
 async function novoEstoqueUi(page,tipo,nome){
+  let clienteId;
+  if(tipo==='CLIENTE') {
+    clienteId=(await write(page,'/clientes',{codigo:crypto.randomUUID(),nome})).id;
+    await page.locator('#refresh').click();
+    await page.locator('#refresh:not([disabled])').waitFor();
+  }
   await route(page,'estoque','#new-stock');await page.locator('#new-stock').click();
   await page.locator('#modal [name=tipo]').selectOption(tipo);
+  if(clienteId) await page.locator('#modal [name=clienteId]').selectOption(String(clienteId));
   await page.locator('#modal [name=codigo]').fill(crypto.randomUUID());
   await page.locator('#modal [name=nome]').fill(nome);
   const salvo=page.waitForResponse(r=>r.request().method()==='POST'&&r.url()===base+'/api/estoques');
@@ -342,7 +399,7 @@ test('Classificação em lote confirma proprietário sem regravar saldo ou hist�
 
 test('Consumo na OS identifica e preserva o estoque do cliente',()=>session(async page=>{
   const cliente=await write(page,'/estoques',{codigo:crypto.randomUUID(),nome:'Cliente do atendimento',tipo:'CLIENTE'});
-  const m=await materialDoEstoque(page,cliente.id,'Material do cliente no atendimento'),o=await order(page,{start:true});
+  const m=await materialDoEstoque(page,cliente.id,'Material do cliente no atendimento'),o=await order(page,{start:true,clienteId:cliente.clienteId});
   await page.locator('#refresh').click();await route(page,'estoque',`[data-history="${m.id}"]`);
   await route(page,`ordens/${o.id}`,'#consume');await page.locator('#consume').click();
   assert.match(await page.locator(`#modal [name=materialId] option[value="${m.id}"]`).innerText(),/Cliente do atendimento/);

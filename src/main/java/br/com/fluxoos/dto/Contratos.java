@@ -54,9 +54,16 @@ public final class Contratos {
     public record NovoMaterial(@NotBlank @Size(max=60) String codigo, @NotBlank @Size(max=160) String nome,
                         @NotBlank @Size(max=20) String unidade, @PositiveOrZero int minimo, @Positive Long estoqueId) {}
     public record NovoEstoque(@NotBlank @Size(max=60) String codigo, @NotBlank @Size(max=160) String nome,
-                             @NotNull TipoEstoque tipo) {}
-    public record EstoqueView(long id, String codigo, String nome, TipoEstoque tipo) {
-        public static EstoqueView de(Estoque e) { return new EstoqueView(e.getId(), e.getCodigo(), e.getNome(), e.getTipo()); }
+                             @NotNull TipoEstoque tipo, @Positive Long clienteId) {
+        public NovoEstoque(String codigo, String nome, TipoEstoque tipo) { this(codigo, nome, tipo, null); }
+    }
+    public record NovoCliente(@NotBlank @Size(max=60) String codigo, @NotBlank @Size(max=160) String nome) {}
+    public record VinculoCliente(@Positive Long clienteId) {}
+    public record ClienteView(long id, String codigo, String nome) {
+        public static ClienteView de(Cliente c) { return new ClienteView(c.getId(), c.getCodigo(), c.getNome()); }
+    }
+    public record EstoqueView(long id, String codigo, String nome, TipoEstoque tipo, Long clienteId) {
+        public static EstoqueView de(Estoque e) { return new EstoqueView(e.getId(), e.getCodigo(), e.getNome(), e.getTipo(), e.getClienteId()); }
     }
     public record ClassificacaoEstoque(@NotNull @Positive Long estoqueId,
                                       @NotEmpty @Size(max=500) List<@NotNull @Positive Long> materialIds) {}
@@ -71,12 +78,15 @@ public final class Contratos {
     }
     public record ItemView(long materialId, String nome, String unidade, int quantidade, Long estoqueId) {}
     public record OrdemView(long id, String solicitante, String local, String problema, Prioridade prioridade, Situacao situacao,
-                     Long tecnicoId, String relato, String responsavel, boolean assinada, Instant assinadoEm, List<ItemView> itens, Long empresaId) {
+                     Long tecnicoId, String relato, String responsavel, boolean assinada, Instant assinadoEm, List<ItemView> itens, Long empresaId,
+                     TipoAtendimento tipoAtendimento, Long clienteId, String clienteNome) {
         public static OrdemView de(OrdemServico o) {
             return new OrdemView(o.getId(), o.getSolicitante(), o.getLocal(), o.getProblema(), o.getPrioridade(), o.getSituacao(),
                     o.getEquipeResponsavelId(), o.getRelatoServico(), o.getNomeResponsavel(), o.getReferenciaAssinatura() != null,
                     o.getAssinadoEm(), o.getItens().stream().map(i -> new ItemView(i.getMaterial().getId(), i.getMaterial().getNome(),
-                    i.getMaterial().getUnidade(), i.getQuantidadeUsada(), i.getEstoqueId())).toList(), o.getEmpresaId());
+                    i.getMaterial().getUnidade(), i.getQuantidadeUsada(), i.getEstoqueId())).toList(), o.getEmpresaId(),
+                    o.getTipoAtendimento(), o.getCliente() == null ? null : o.getCliente().getId(),
+                    o.getCliente() == null ? null : o.getCliente().getNome());
         }
     }
 }

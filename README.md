@@ -211,6 +211,11 @@ antes de executar a suíte de `tests/e2e`. Ela inicia seu próprio H2 em memóri
 
 Consulte [arquitetura](docs/ARQUITETURA.md), [API](docs/API.md) e [operação](docs/OPERACAO.md).
 
+O [cadastro de clientes e consumo na OS](docs/CLIENTES_E_CONSUMO_OS_2026-11-15.md) vincula o mesmo
+cliente ao atendimento e aos seus estoques. OS de cliente aceitam materiais da empresa ou do próprio
+cliente; outros clientes e materiais sem classificação ficam bloqueados. As migrations V17/V18
+preservam o legado e incluem pré-validação e reversões protegidas.
+
 A [revisão final de código e testes de 12/11/2026](docs/REVISAO_FINAL_2026-11-12.md) registra os
 defeitos reproduzidos e corrigidos, as atualizações de segurança e os limites da análise.
 

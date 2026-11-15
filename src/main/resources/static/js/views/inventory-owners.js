@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { escape, icon, modal, campo } from '../components.js';
+import { seletorCliente } from './clients.js';
 
 export function seletorEstoque(ctx, nome = 'estoqueId') {
   return `<label>Estoque proprietário<select name="${nome}" required><option value="" disabled selected>Selecione a empresa ou o cliente</option>${ctx.estado.estoques.map(e => `<option value="${e.id}">${escape(ctx.nomeEstoque(e.id))} · ${escape(e.codigo)}</option>`).join('')}</select></label>`;
@@ -8,7 +9,15 @@ export function seletorEstoque(ctx, nome = 'estoqueId') {
 export function novoEstoque(ctx) {
   modal('Novo estoque', `<p class="form-intro">Separe os materiais da empresa dos materiais de cada cliente. Cada estoque terá seus próprios cadastros e saldos.</p><label>Proprietário<select name="tipo" required><option value="EMPRESA">Empresa</option><option value="CLIENTE">Cliente</option></select></label>${campo('Código do estoque', 'codigo', 'text', 'maxlength="60" placeholder="Ex.: EMPRESA ou CLI-001"')}${campo('Nome da empresa, unidade ou cliente', 'nome', 'text', 'maxlength="160" placeholder="Ex.: Matriz ou São Lucas"')}`, {
     textoBotao: 'Criar estoque',
-    aoEnviar: e => api('/estoques', { method: 'POST', body: e }),
+    aoAbrir: el => {
+      const tipo = el.querySelector('[name="tipo"]');
+      const bloco = document.createElement('div');
+      bloco.innerHTML = seletorCliente(ctx) + '<p class="hint">Cadastre o cliente na página Clientes. O vínculo do estoque com o cliente é permanente.</p>';
+      tipo.closest('label').after(bloco);
+      const atualizar = () => { bloco.hidden = tipo.value !== 'CLIENTE'; bloco.querySelector('select').disabled = bloco.hidden; };
+      tipo.addEventListener('change', atualizar); atualizar();
+    },
+    aoEnviar: e => api('/estoques', { method: 'POST', body: { ...e, clienteId: e.tipo === 'CLIENTE' ? Number(e.clienteId) : null } }),
     aoSalvar: () => ctx.aposGravar('Estoque criado.'),
   });
 }

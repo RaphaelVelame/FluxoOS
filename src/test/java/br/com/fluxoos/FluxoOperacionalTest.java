@@ -45,6 +45,9 @@ class FluxoOperacionalTest {
     @Autowired OrdemServicoService ordens;
     @Autowired EstoqueService estoque;
     @Autowired EstoqueRepository estoquesRepository;
+    @Autowired ClienteRepository clientesRepository;
+    @Autowired ClienteService clientes;
+    @Autowired EmpresaRepository empresas;
     @Autowired NotificacaoRepository notificacoes;
     @Autowired org.springframework.transaction.PlatformTransactionManager transacoes;
 
@@ -56,6 +59,7 @@ class FluxoOperacionalTest {
         ordensRepository.deleteAll();
         materiais.deleteAllInBatch();
         estoquesRepository.deleteAllInBatch();
+        clientesRepository.deleteAllInBatch();
         usuarios.deleteAllInBatch();
         contas.clear();
         inserirUsuario(1, "admin", Perfil.CHEFE);
@@ -309,12 +313,13 @@ class FluxoOperacionalTest {
     @Test void estoquesDaEmpresaEDosClientesMantemSaldosEConsumosSeparados() throws Exception {
         Acesso admin = login("admin");
         long empresa = enviar(post("/api/estoques"),Map.of("codigo","EMP","nome","Empresa matriz","tipo","EMPRESA"),admin,201).get("id").asLong();
-        long cliente = enviar(post("/api/estoques"),Map.of("codigo","CLI","nome","Cliente São Lucas","tipo","CLIENTE"),admin,201).get("id").asLong();
+        long clienteId = clientes.cadastrar(usuario(1),"SAO-LUCAS","São Lucas").getId();
+        long cliente = enviar(post("/api/estoques"),Map.of("codigo","CLI","nome","Cliente São Lucas","tipo","CLIENTE","clienteId",clienteId),admin,201).get("id").asLong();
         long proprio = enviar(post("/api/materiais"),Map.of("codigo","CABO-EMP","nome","Cabo","unidade","m","minimo",0,"estoqueId",empresa),admin,201).get("id").asLong();
         long terceiro = enviar(post("/api/materiais"),Map.of("codigo","CABO-CLI","nome","Cabo","unidade","m","minimo",0,"estoqueId",cliente),admin,201).get("id").asLong();
         enviar(post("/api/materiais/"+proprio+"/movimentos").header("Idempotency-Key",chave()),Map.of("tipo","ENTRADA","variacao",10,"observacao","Estoque próprio"),admin,200);
         enviar(post("/api/materiais/"+terceiro+"/movimentos").header("Idempotency-Key",chave()),Map.of("tipo","ENTRADA","variacao",7,"observacao","Em custódia"),admin,200);
-        long os = prepararOrdem();
+        long os = prepararOrdem(clienteId);
         enviar(post("/api/ordens/"+os+"/materiais").header("Idempotency-Key",chave()),Map.of("materialId",terceiro,"quantidade",2,"observacao","Uso autorizado"),admin,200);
         assertThat(materiais.findById(proprio).orElseThrow().getQuantidade()).isEqualTo(10);
         assertThat(materiais.findById(terceiro).orElseThrow().getQuantidade()).isEqualTo(5);
@@ -332,7 +337,7 @@ class FluxoOperacionalTest {
         long os = prepararOrdem();
         estoque.consumir(admin,os,primeiro.getId(),2,"Uso anterior à classificação",chave());
         long movimentosAntes = movimentos.count();
-        long destino = estoque.cadastrarEstoque(admin,"CLI-ACME","Cliente Acme",TipoEstoque.CLIENTE).getId();
+        long destino = estoque.cadastrarEstoque(admin,"CLI-ACME","Cliente Acme",TipoEstoque.CLIENTE,clientes.cadastrar(admin,"ACME","Acme").getId()).getId();
         assertThat(estoque.classificar(admin,destino,List.of(segundo.getId(),primeiro.getId(),primeiro.getId()))).isEqualTo(2);
         assertThat(estoque.classificar(admin,destino,List.of(primeiro.getId(),segundo.getId()))).isZero();
         assertThat(materiais.findById(primeiro.getId()).orElseThrow().getQuantidade()).isEqualTo(8);
@@ -359,7 +364,7 @@ class FluxoOperacionalTest {
         enviar(patch("/api/materiais/estoque"),Map.of("estoqueId",id,"materialIds",List.of()),admin,400);
         enviar(patch("/api/materiais/estoque"),Map.of("estoqueId",id,"materialIds",List.of(material,999999L)),admin,404);
         assertThat(materiais.findById(material).orElseThrow().getEstoqueId()).isNull();
-        enviar(post("/api/estoques"),Map.of("codigo","EMP","nome","Duplicado","tipo","CLIENTE"),admin,409);
+        enviar(post("/api/estoques"),Map.of("codigo","EMP","nome","Duplicado","tipo","EMPRESA"),admin,409);
         enviar(post("/api/estoques"),Map.of("codigo","CLI","nome"," ","tipo","CLIENTE"),admin,400);
         enviar(post("/api/estoques"),Map.of("codigo","CLI","nome","Cliente","tipo","OUTRO"),admin,400);
         enviar(post("/api/materiais"),Map.of("codigo","SEM-REF","nome","Material","unidade","un","minimo",0,"estoqueId",999999),admin,404);
@@ -374,15 +379,115 @@ class FluxoOperacionalTest {
         assertThat(auditoria.findByTipoInOrderByIdDesc(List.of("LOGIN_BLOQUEADO")).size()).isPositive();
     }
 
+    @Test void consumoDeClientePermiteEmpresaEProprioClienteERecusaOutrosESemClassificacaoAtomicamente() {
+        Usuario admin = usuario(1);
+        long cliente = clientes.cadastrar(admin,"CLI-A","Cliente A").getId();
+        long outro = clientes.cadastrar(admin,"CLI-B","Cliente B").getId();
+        long dono = estoque.cadastrarEstoque(admin,"C-A","Custódia A",TipoEstoque.CLIENTE,cliente).getId();
+        long alheio = estoque.cadastrarEstoque(admin,"C-B","Custódia B",TipoEstoque.CLIENTE,outro).getId();
+        long empresa = estoque.cadastrarEstoque(admin,"EMP","Empresa",TipoEstoque.EMPRESA).getId();
+        Material proprio = materialComOrigem(empresa), permitido = materialComOrigem(dono), bloqueado = materialComOrigem(alheio), sem = prepararMaterial(10);
+        long os = prepararOrdem(cliente);
+        long movimentosAntes = movimentos.count(), auditoriasAntes = auditoria.count(), requisicoesAntes = requisicoes.count();
+        for (Material m : List.of(bloqueado,sem)) {
+            assertThatThrownBy(() -> estoque.consumir(admin,os,m.getId(),2,"Não permitido",chave())).isInstanceOf(IllegalStateException.class);
+            assertThat(materiais.findById(m.getId()).orElseThrow().getQuantidade()).isEqualTo(10);
+        }
+        assertThat(movimentos.count()).isEqualTo(movimentosAntes);
+        assertThat(auditoria.count()).isEqualTo(auditoriasAntes);
+        assertThat(requisicoes.count()).isEqualTo(requisicoesAntes);
+        assertThat(ordens.buscar(admin,os).itens()).isEmpty();
+        String key = chave();
+        long movimento = estoque.consumir(admin,os,permitido.getId(),2,"Mesmo cliente",key);
+        assertThat(estoque.consumir(admin,os,permitido.getId(),2,"Mesmo cliente",key)).isEqualTo(movimento);
+        estoque.consumir(admin,os,proprio.getId(),3,"Material da empresa",chave());
+        assertThat(materiais.findById(permitido.getId()).orElseThrow().getQuantidade()).isEqualTo(8);
+        assertThat(materiais.findById(proprio.getId()).orElseThrow().getQuantidade()).isEqualTo(7);
+        assertThat(ordens.buscar(admin,os).itens()).hasSize(2);
+    }
+
+    @Test void atendimentoInternoNaoConsomeMaterialEmCustodiaDeCliente() {
+        Usuario admin=usuario(1);
+        long cliente=clientes.cadastrar(admin,"C","Cliente").getId();
+        long dono=estoque.cadastrarEstoque(admin,"C","Custódia",TipoEstoque.CLIENTE,cliente).getId();
+        Material material=materialComOrigem(dono);
+        long os=prepararOrdem();
+        assertThat(ordens.buscar(admin,os).tipoAtendimento()).isEqualTo(TipoAtendimento.INTERNO);
+        assertThatThrownBy(()->estoque.consumir(admin,os,material.getId(),1,"Interno",chave())).isInstanceOf(IllegalStateException.class);
+        assertThat(materiais.findById(material.getId()).orElseThrow().getQuantidade()).isEqualTo(10);
+    }
+
+    @Test void clienteAlteraIdentidadeDaAberturaSemDuplicarRepeticaoIdentica() {
+        Usuario admin=usuario(1);
+        long a=clientes.cadastrar(admin,"A","Cliente A").getId(), b=clientes.cadastrar(admin,"B","Cliente B").getId();
+        String key=chave();
+        var primeira=ordens.abrirComChave(admin,"Pessoa","Local","Falha",Prioridade.MEDIA,key,a);
+        assertThat(ordens.abrirComChave(admin,"Pessoa","Local","Falha",Prioridade.MEDIA,key,a)).isEqualTo(primeira);
+        assertThatThrownBy(()->ordens.abrirComChave(admin,"Pessoa","Local","Falha",Prioridade.MEDIA,key,b)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(()->ordens.abrirComChave(admin,"Pessoa","Local","Falha",Prioridade.MEDIA,key,null)).isInstanceOf(IllegalStateException.class);
+        assertThat(ordensRepository.count()).isEqualTo(1);
+        assertThat(primeira.clienteNome()).isEqualTo("Cliente A");
+    }
+
+    @Test void clienteSemprePertenceAoTenantDaSessaoMesmoComEmpresaInformadaNoCorpo() throws Exception {
+        Usuario admin=usuario(1);
+        Empresa empresaB=empresas.save(new Empresa("Outra empresa"));
+        Usuario adminB=usuarios.save(new Usuario("b-"+chave(),"Gestor B",empresaB.getId(),Set.of(Role.ROLE_ADMIN_EMPRESA),HASH));
+        long alheio=clientes.cadastrar(adminB,"C","Cliente de outra empresa").getId();
+        Acesso acesso=login("admin");
+        assertThat(enviar(get("/api/clientes"),null,acesso,200)).isEmpty();
+        enviar(post("/api/ordens"),Map.of("solicitante","Pessoa","local","Local","problema","Falha","prioridade","MEDIA","clienteId",alheio),acesso,404);
+        enviar(post("/api/estoques"),Map.of("codigo","C","nome","Custódia","tipo","CLIENTE","clienteId",alheio),acesso,404);
+        enviar(post("/api/clientes"),Map.of("codigo","X","nome","Tenant da sessão","empresaId",empresaB.getId()),acesso,201);
+        assertThat(clientes.listar(admin)).extracting(br.com.fluxoos.dto.Contratos.ClienteView::codigo).containsExactly("X");
+        enviar(post("/api/clientes"),Map.of("codigo","C","nome","Cliente"),acesso,201);
+        enviar(post("/api/clientes"),Map.of("codigo","C","nome","Duplicado"),acesso,409);
+        enviar(post("/api/clientes"),Map.of("codigo","VAZIO","nome"," "),acesso,400);
+        assertThat(clientes.listar(adminB)).hasSize(1);
+        assertThat(ordensRepository.count()).isZero();
+        assertThat(estoquesRepository.count()).isZero();
+    }
+
+    @Test void estoqueExigeClienteSomenteNoTipoClienteELeituraNaoConcedeCadastro() throws Exception {
+        Acesso acesso=login("admin"), tecnico=login("tecnico");
+        long cliente=clientes.cadastrar(usuario(1),"C","Cliente").getId();
+        enviar(post("/api/estoques"),Map.of("codigo","C","nome","Custódia","tipo","CLIENTE"),acesso,400);
+        enviar(post("/api/estoques"),Map.of("codigo","E","nome","Empresa","tipo","EMPRESA","clienteId",cliente),acesso,400);
+        enviar(get("/api/clientes"),null,tecnico,200);
+        enviar(post("/api/clientes"),Map.of("codigo","X","nome","Sem permissão"),tecnico,403);
+        enviar(post("/api/ordens"),Map.of("solicitante","Pessoa","local","Local","problema","Falha","prioridade","MEDIA","clienteId",-1),acesso,400);
+    }
+
+    @Test void identificacaoLegadaPreservaHistoricoEBloqueiaReatribuicaoOuConsumoAnterior() {
+        Usuario admin=usuario(1);
+        long cliente=clientes.cadastrar(admin,"C","Cliente").getId();
+        long os=prepararOrdem(), outra=prepararOrdem();
+        var jdbc=new org.springframework.jdbc.core.JdbcTemplate(((org.springframework.orm.jpa.JpaTransactionManager)transacoes).getDataSource());
+        jdbc.update("UPDATE ordens SET tipo_atendimento='LEGADO' WHERE id IN (?,?)",os,outra);
+        estoque.consumir(admin,outra,prepararMaterial(5).getId(),1,"Legado",chave());
+        assertThatThrownBy(()->ordens.classificarCliente(admin,outra,cliente)).isInstanceOf(IllegalStateException.class);
+        assertThat(ordens.classificarCliente(admin,os,cliente).clienteId()).isEqualTo(cliente);
+        assertThatThrownBy(()->ordens.classificarCliente(admin,os,null)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(()->ordens.classificarCliente(usuario(2),outra,null)).isInstanceOf(SecurityException.class);
+        assertThat(ordens.buscar(admin,outra).tipoAtendimento()).isEqualTo(TipoAtendimento.LEGADO);
+    }
+
+    private Material materialComOrigem(Long estoqueId) {
+        Material material=estoque.cadastrar(usuario(1),chave(),"Material","un",0,estoqueId);
+        estoque.movimentar(usuario(1),material.getId(),TipoMovimento.ENTRADA,10,"Entrada de teste",chave());
+        return material;
+    }
+
     private void inserirUsuario(long id, String login, Perfil perfil) {
         contas.put(id, usuarios.save(new Usuario(login, login, perfil, HASH)));
     }
     private Usuario usuario(long id) { return usuarios.findById(contas.get(id).getId()).orElseThrow(); }
-    private long prepararOrdem() {
-        OrdemServico o = ordens.abrir(usuario(1), "Ana", "Escola", "Rede", Prioridade.ALTA);
-        ordens.atribuir(usuario(1), o.getId(), usuario(2).getId());
-        ordens.iniciar(usuario(2), o.getId());
-        return o.getId();
+    private long prepararOrdem() { return prepararOrdem(null); }
+    private long prepararOrdem(Long clienteId) {
+        var o = ordens.abrirComChave(usuario(1), "Ana", "Escola", "Rede", Prioridade.ALTA, chave(), clienteId);
+        ordens.atribuir(usuario(1), o.id(), usuario(2).getId());
+        ordens.iniciar(usuario(2), o.id());
+        return o.id();
     }
     private Material prepararMaterial(int quantidade) {
         Material m = new Material(chave(), "Conector", "un", quantidade, 5, true);

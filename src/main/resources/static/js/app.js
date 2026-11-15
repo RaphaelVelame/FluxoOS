@@ -3,12 +3,13 @@ import { nomesFuncoes, temFuncao, icon, escape, toast, fecharModal } from './com
 import { dashboard } from './views/dashboard.js';
 import { ordens, detalheOrdem, novaOrdem } from './views/orders.js';
 import { estoque } from './views/inventory.js';
+import { clientes } from './views/clients.js';
 import { equipe, conta } from './views/team.js';
 
-const estado = { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [], estoques: [], empresas: [] };
+const estado = { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [], estoques: [], empresas: [], clientes: [] };
 let sincronizacaoPendente = null;
 let sincronizando = null;
-const navegacao = [['inicio', 'Visão geral', 'grid'], ['ordens', 'Ordens de serviço', 'clipboard'], ['estoque', 'Estoque', 'box'], ['equipe', 'Equipe', 'users']];
+const navegacao = [['inicio', 'Visão geral', 'grid'], ['ordens', 'Ordens de serviço', 'clipboard'], ['estoque', 'Estoque', 'box'], ['clientes', 'Clientes', 'user'], ['equipe', 'Equipe', 'users']];
 const contexto = {
   estado,
   get master() { return temFuncao(estado.usuario, 'ROLE_ADMIN_MASTER'); },
@@ -31,13 +32,13 @@ async function atualizar() {
   const usuario = estado.usuario;
   if (contexto.master) {
     const [ordens, usuarios, empresas] = await Promise.all([api('/ordens'), api('/usuarios'), api('/plataforma/empresas')]);
-    if (usuario === estado.usuario) Object.assign(estado, { ordens, usuarios, empresas, materiais: [], movimentos: [], estoques: [] });
+    if (usuario === estado.usuario) Object.assign(estado, { ordens, usuarios, empresas, materiais: [], movimentos: [], estoques: [], clientes: [] });
     return;
   }
-  const [ordens, materiais, usuarios, movimentos, estoques] = await Promise.all([
-    api('/ordens'), api('/materiais'), api('/usuarios'), api('/movimentos'), api('/estoques'),
+  const [ordens, materiais, usuarios, movimentos, estoques, clientes] = await Promise.all([
+    api('/ordens'), api('/materiais'), api('/usuarios'), api('/movimentos'), api('/estoques'), api('/clientes'),
   ]);
-  if (usuario === estado.usuario) Object.assign(estado, { ordens, materiais, usuarios, movimentos, estoques });
+  if (usuario === estado.usuario) Object.assign(estado, { ordens, materiais, usuarios, movimentos, estoques, clientes });
 }
 
 function mostrarPendencia(carregando = false) {
@@ -103,7 +104,7 @@ function login() {
 
 function shell() {
   const u = estado.usuario;
-  const itensNavegacao = navegacao.filter(([rota]) => !contexto.master || rota !== 'estoque');
+  const itensNavegacao = navegacao.filter(([rota]) => !contexto.master || !['estoque', 'clientes'].includes(rota));
   document.querySelector('#app').innerHTML = `<div class="app-layout"><aside class="sidebar"><a class="brand" href="#inicio"><span class="brand-mark">F</span>Fluxo<span>OS</span></a><span class="nav-label">ESPAÇO DE TRABALHO</span><nav aria-label="Navegação principal">${itensNavegacao.map(([rota, nome, simbolo]) => `<a href="#${rota}" data-nav="${rota}">${icon(simbolo)}<span>${nome}</span></a>`).join('')}</nav><div class="sidebar-note">${icon('check')}<strong>Do chamado à solução.</strong><p>Tudo conectado em um único fluxo.</p><span class="note-decoration"></span></div><div class="sidebar-bottom"><a class="profile" href="#conta"><span class="avatar">${escape(contexto.iniciais(u.id))}</span><div><strong>${escape(u.nome)}</strong><small>${escape(nomesFuncoes(u))}</small></div>${icon('user')}</a><button id="logout" class="logout">${icon('logout')} Sair da conta</button></div></aside>
     <div class="workspace"><header class="topbar"><span class="workspace-label"><span class="online-dot"></span> Gestão de operações</span><div class="topbar-actions"><span id="today"></span><a href="#conta" class="mobile-profile avatar" aria-label="Minha conta">${escape(contexto.iniciais(u.id))}</a><button class="icon-button" id="refresh" aria-label="Atualizar dados">${icon('refresh')}</button></div></header><main id="main" tabindex="-1"><div id="page-header" class="page-header"></div><div id="content"></div><footer class="workspace-footer"><span>FluxoOS</span> Organização que faz o trabalho acontecer.</footer></main></div>
     <nav class="bottom-nav" aria-label="Navegação no celular">${itensNavegacao.map(([rota, nome, simbolo]) => `<a href="#${rota}" data-nav="${rota}">${icon(simbolo)}<span>${rota === 'inicio' ? 'Início' : rota === 'ordens' ? 'Ordens' : nome}</span></a>`).join('')}</nav></div>`;
@@ -145,6 +146,7 @@ async function rota() {
     } else if (nome === 'ordens') ordens(contexto);
     else if (nome === 'estoque' && contexto.master) pagina('<div class="empty-state"><h2>Consulte o estoque da empresa</h2><p>Use uma conta operacional da empresa para consultar seus materiais e movimentos.</p><a class="button secondary" href="#inicio">Voltar à visão global</a></div>', { titulo: 'Estoque por empresa', subtitulo: 'O acesso master possui escopo global' });
     else if (nome === 'estoque') estoque(contexto);
+    else if (nome === 'clientes' && !contexto.master) clientes(contexto);
     else if (nome === 'equipe') equipe(contexto, id && /^\d+$/.test(id) ? Number(id) : null);
     else if (nome === 'conta') conta(contexto);
     else dashboard(contexto);
@@ -159,7 +161,7 @@ function encerrar() {
   sincronizacaoPendente = null;
   sincronizando = null;
   salvarCsrf(null);
-  Object.assign(estado, { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [], estoques: [], empresas: [] });
+  Object.assign(estado, { usuario: null, ordens: [], materiais: [], usuarios: [], movimentos: [], estoques: [], empresas: [], clientes: [] });
   location.hash = 'inicio';
   login();
 }

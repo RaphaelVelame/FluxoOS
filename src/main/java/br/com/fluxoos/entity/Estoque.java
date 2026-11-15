@@ -18,6 +18,8 @@ public class Estoque extends RegistroEmpresa {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TipoEstoque tipo;
+    @Column(name = "cliente_id", updatable = false)
+    private Long clienteId;
 
     protected Estoque() {}
 
@@ -33,4 +35,16 @@ public class Estoque extends RegistroEmpresa {
     public String getCodigo() { return codigo; }
     public String getNome() { return nome; }
     public TipoEstoque getTipo() { return tipo; }
+    public Long getClienteId() { return clienteId; }
+
+    public Estoque(long empresaId, String codigo, String nome, TipoEstoque tipo, Cliente cliente) {
+        this(empresaId, codigo, nome, tipo);
+        if ((tipo == TipoEstoque.CLIENTE) != (cliente != null))
+            throw new IllegalArgumentException("Estoque de cliente exige um cliente; estoque da empresa não aceita cliente.");
+        if (cliente != null) {
+            if (!Objects.equals(cliente.getEmpresaId(), getEmpresaId()))
+                throw new IllegalArgumentException("Cliente de outra empresa.");
+            this.clienteId = cliente.getId();
+        }
+    }
 }

@@ -24,16 +24,18 @@ public class EstoqueService {
     private final RequisicaoProcessadaRepository requisicoes;
     private final AuditoriaService auditoria;
     private final EstoqueRepository estoques;
+    private final ClienteService clientes;
 
     public EstoqueService(MaterialRepository materiais, OrdemServicoRepository ordens,
                           MovimentoEstoqueRepository movimentos, RequisicaoProcessadaRepository requisicoes,
-                          AuditoriaService auditoria, EstoqueRepository estoques) {
+                          AuditoriaService auditoria, EstoqueRepository estoques, ClienteService clientes) {
         this.materiais = materiais;
         this.ordens = ordens;
         this.movimentos = movimentos;
         this.requisicoes = requisicoes;
         this.auditoria = auditoria;
         this.estoques = estoques;
+        this.clientes = clientes;
     }
 
     @Transactional(readOnly = true)
@@ -64,8 +66,13 @@ public class EstoqueService {
     }
 
     public Estoque cadastrarEstoque(Usuario ator, String codigo, String nome, TipoEstoque tipo) {
+        return cadastrarEstoque(ator, codigo, nome, tipo, null);
+    }
+
+    public Estoque cadastrarEstoque(Usuario ator, String codigo, String nome, TipoEstoque tipo, Long clienteId) {
         OrdemServicoService.exigirGestor(ator);
-        Estoque estoque = estoques.save(new Estoque(EscopoEmpresa.exigir(ator), codigo, nome, tipo));
+        Cliente cliente = clienteId == null ? null : clientes.carregar(ator, clienteId);
+        Estoque estoque = estoques.save(new Estoque(EscopoEmpresa.exigir(ator), codigo, nome, tipo, cliente));
         auditoria.registrar(null, ator.getId(), "ESTOQUE_CRIADO", "Estoque cadastrado: " + estoque.getCodigo() + " (" + tipo + ").");
         return estoque;
     }
@@ -126,6 +133,7 @@ public class EstoqueService {
         if (anterior != null) return anterior;
         Material material = carregarMaterial(ator, materialId);
         ordem.validarInclusaoItem(material, quantidade);
+        ordem.validarOrigemMaterial(material.getEstoqueId() == null ? null : carregarEstoque(ator, material.getEstoqueId()));
         MovimentoEstoque movimento = new MovimentoEstoque(material, ator, ordem, TipoMovimento.SAIDA,
                 -quantidade, material.preverSaldo(-quantidade), observacao);
         material.aplicarVariacao(-quantidade);

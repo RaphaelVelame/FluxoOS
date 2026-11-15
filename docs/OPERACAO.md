@@ -74,4 +74,9 @@ O procedimento de ida, pré-validação e reversão das constraints está em
 locations do Flyway e não são executados automaticamente. Não apagar histórico do Flyway nem
 editar migrations já aplicadas. A presença de V6–V12 no código não autoriza sua execução em produção.
 
-O endpoint de assinatura e as consultas da equipe seguem as permissões de consulta do README. Se os atendimentos precisarem de segregação por unidade, organização ou solicitante, implemente esse filtro no servidor antes de incluir dados reais desse escopo.
+O endpoint de assinatura e as consultas da equipe seguem as permissões de consulta do README.
+Os dados operacionais são isolados por empresa. Clientes são cadastros dessa empresa, usados no
+vínculo das OS e na autorização de consumo de materiais, sem criar acessos externos para clientes.
+Consulte [clientes, pré-validação V17/V18 e caminho de volta](CLIENTES_E_CONSUMO_OS_2026-11-15.md).
+Se for necessário restringir também por unidade ou solicitante dentro de uma mesma empresa,
+implemente esse filtro no servidor antes de incluir dados desse escopo.

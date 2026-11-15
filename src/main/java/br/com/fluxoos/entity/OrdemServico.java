@@ -20,6 +20,12 @@ public class OrdemServico extends RegistroEmpresa {
     private String chaveAbertura;
     @Column(name = "conteudo_abertura", length = 64, updatable = false)
     private String conteudoAbertura;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cliente_id")
+    private Cliente cliente;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_atendimento", nullable = false, length = 20)
+    private TipoAtendimento tipoAtendimento = TipoAtendimento.INTERNO;
     @Column(nullable = false, length = 160)
     private String solicitante;
     @Column(nullable = false, length = 240)
@@ -77,6 +83,37 @@ public class OrdemServico extends RegistroEmpresa {
         chaveAbertura = chave;
         conteudoAbertura = conteudo;
     }
+
+    public OrdemServico(long empresaId, String solicitante, String local, String problema, Prioridade prioridade, Cliente cliente) {
+        this(empresaId, solicitante, local, problema, prioridade);
+        definirCliente(cliente);
+    }
+
+    private void definirCliente(Cliente cliente) {
+        if (cliente != null && !Objects.equals(getEmpresaId(), cliente.getEmpresaId()))
+            throw new IllegalArgumentException("Cliente de outra empresa.");
+        this.cliente = cliente;
+        this.tipoAtendimento = cliente == null ? TipoAtendimento.INTERNO : TipoAtendimento.CLIENTE;
+    }
+
+    public void classificarAtendimento(Cliente cliente) {
+        if (tipoAtendimento != TipoAtendimento.LEGADO || !itens.isEmpty() || situacao == Situacao.CONCLUIDA)
+            throw new IllegalStateException("Somente OS legada sem consumo e não concluída pode identificar o cliente.");
+        definirCliente(cliente);
+    }
+
+    public void validarOrigemMaterial(Estoque estoque) {
+        if (estoque != null && !Objects.equals(getEmpresaId(), estoque.getEmpresaId()))
+            throw new IllegalArgumentException("Estoque de outra empresa.");
+        if (tipoAtendimento == TipoAtendimento.CLIENTE && estoque == null)
+            throw new IllegalStateException("Classifique o proprietário do material antes de consumi-lo numa OS de cliente.");
+        if (estoque != null && estoque.getTipo() == TipoEstoque.CLIENTE
+                && (cliente == null || !Objects.equals(estoque.getClienteId(), cliente.getId())))
+            throw new IllegalStateException("Material de cliente só pode ser utilizado na OS do próprio cliente.");
+    }
+
+    public Cliente getCliente() { return cliente; }
+    public TipoAtendimento getTipoAtendimento() { return tipoAtendimento; }
 
     public String getConteudoAbertura() { return conteudoAbertura; }
 

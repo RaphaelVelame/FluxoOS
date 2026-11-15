@@ -6,7 +6,7 @@ import java.util.List;
 
 class MigracaoMultiTenantTest {
     void atualizar(PropriedadeEstoqueTest.Banco b) {
-        MigracoesTeste.configurar(b.url,b.usuario,b.senha,b.schema).load().migrate();
+        MigracoesTeste.configurar(b.url,b.usuario,b.senha,b.schema).target("16").load().migrate();
     }
     void volta(PropriedadeEstoqueTest.Banco b,int versao,String nome) {
         b.script("db/rollback/"+b.vendor+"/V"+versao+"__"+nome+".down.sql");

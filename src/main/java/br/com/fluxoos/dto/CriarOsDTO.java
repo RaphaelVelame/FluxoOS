@@ -5,4 +5,8 @@ import jakarta.validation.constraints.*;
 
 public record CriarOsDTO(@NotBlank @Size(max=160) String solicitante,
         @NotBlank @Size(max=240) String local, @NotBlank @Size(max=4000) String problema,
-        @NotNull Prioridade prioridade) {}
+        @NotNull Prioridade prioridade, @Positive Long clienteId) {
+    public CriarOsDTO(String solicitante, String local, String problema, Prioridade prioridade) {
+        this(solicitante, local, problema, prioridade, null);
+    }
+}

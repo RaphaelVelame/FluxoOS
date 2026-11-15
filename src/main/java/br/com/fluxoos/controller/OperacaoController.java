@@ -20,10 +20,12 @@ public class OperacaoController {
     private final EstoqueService estoque;
     private final UsuarioService usuarios;
     private final AuditoriaService auditoria;
+    private final ClienteService clientes;
 
     public OperacaoController(OrdemServicoService ordens, EstoqueService estoque,
-                              UsuarioService usuarios, AuditoriaService auditoria) {
+                              UsuarioService usuarios, AuditoriaService auditoria, ClienteService clientes) {
         this.ordens = ordens; this.estoque = estoque; this.usuarios = usuarios; this.auditoria = auditoria;
+        this.clientes = clientes;
     }
 
     @GetMapping("/materiais") public List<MaterialView> materiais(HttpServletRequest req) { return estoque.listar(ProtecaoHttp.usuario(req)); }
@@ -31,7 +33,18 @@ public class OperacaoController {
     @PostMapping("/estoques") @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
     @PreAuthorize("hasAnyRole('ADMIN_EMPRESA','ESTOQUISTA')")
     public EstoqueView cadastrarEstoque(@Valid @RequestBody NovoEstoque e, HttpServletRequest req) {
-        return EstoqueView.de(estoque.cadastrarEstoque(ProtecaoHttp.usuario(req), e.codigo(), e.nome(), e.tipo()));
+        return EstoqueView.de(estoque.cadastrarEstoque(ProtecaoHttp.usuario(req), e.codigo(), e.nome(), e.tipo(), e.clienteId()));
+    }
+    @GetMapping("/clientes") public List<ClienteView> clientes(HttpServletRequest req) { return clientes.listar(ProtecaoHttp.usuario(req)); }
+    @PostMapping("/clientes") @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('ADMIN_EMPRESA','SUPERVISOR','SUPORTE_TECNICO','ESTOQUISTA')")
+    public ClienteView cadastrarCliente(@Valid @RequestBody NovoCliente e, HttpServletRequest req) {
+        return ClienteView.de(clientes.cadastrar(ProtecaoHttp.usuario(req), e.codigo(), e.nome()));
+    }
+    @PatchMapping("/ordens/{id}/cliente")
+    @PreAuthorize("hasRole('ADMIN_EMPRESA')")
+    public OrdemView classificarCliente(@PathVariable long id, @Valid @RequestBody VinculoCliente e, HttpServletRequest req) {
+        return ordens.classificarCliente(ProtecaoHttp.usuario(req), id, e.clienteId());
     }
     @PatchMapping("/materiais/estoque")
     @PreAuthorize("hasAnyRole('ADMIN_EMPRESA','ESTOQUISTA')")
@@ -57,7 +70,7 @@ public class OperacaoController {
     @PostMapping("/ordens") @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
     @PreAuthorize("hasAnyRole('ADMIN_EMPRESA','SUPERVISOR','SUPORTE_TECNICO')")
     public OrdemView abrir(@Valid @RequestBody CriarOsDTO e, @RequestHeader("Idempotency-Key") String chave, HttpServletRequest req) {
-        return ordens.abrirComChave(ProtecaoHttp.usuario(req), e.solicitante(), e.local(), e.problema(), e.prioridade(), chave);
+        return ordens.abrirComChave(ProtecaoHttp.usuario(req), e.solicitante(), e.local(), e.problema(), e.prioridade(), chave, e.clienteId());
     }
     @PostMapping("/ordens/{id}/atribuicao")
     @PreAuthorize("hasAnyRole('ADMIN_EMPRESA')")

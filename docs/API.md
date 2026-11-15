@@ -20,7 +20,10 @@ Base: `/api`. JSON UTF-8. Erros retornam `{"mensagem":"Descrição"}`. A interfa
 | PATCH | `/notificacoes/{id}/leitura` | Marca somente a própria notificação como lida |
 | PATCH | `/usuarios/{id}/status` | `ativo` booleano |
 | GET | `/ordens` | Listagem de OS |
-| POST | `/ordens` | `solicitante`, `local`, `problema`, `prioridade` |
+| POST | `/ordens` | `solicitante`, `local`, `problema`, `prioridade`, `clienteId` (nulo/omitido = interno) |
+| PATCH | `/ordens/{id}/cliente` | `clienteId` ou nulo para interno; somente ADMIN_EMPRESA, OS legada sem consumo e não concluída |
+| GET | `/clientes` | `id`, `codigo`, `nome`; somente clientes da empresa da sessão |
+| POST | `/clientes` | `codigo`, `nome`; ADMIN_EMPRESA, SUPERVISOR, SUPORTE_TECNICO ou ESTOQUISTA |
 | GET | `/ordens/{id}` | Detalhes e itens |
 | POST | `/ordens/{id}/atribuicao` | `tecnicoId` |
 | POST | `/ordens/{id}/inicio` | Sem corpo |
@@ -30,8 +33,8 @@ Base: `/api`. JSON UTF-8. Erros retornam `{"mensagem":"Descrição"}`. A interfa
 | GET | `/ordens/{id}/historico` | Auditoria da OS |
 | GET | `/ordens/{id}/assinatura` | PNG autenticado |
 | GET | `/materiais` | Saldos, alertas e `referenciaFabricante` (opcional, preenchida na importação) |
-| GET | `/estoques` | Cadastros de estoques: `id`, `codigo`, `nome`, `tipo` (`EMPRESA`/`CLIENTE`) |
-| POST | `/estoques` | `codigo`, `nome`, `tipo`; exige chefia ou suporte TI |
+| GET | `/estoques` | `id`, `codigo`, `nome`, `tipo` (`EMPRESA`/`CLIENTE`), `clienteId` |
+| POST | `/estoques` | `codigo`, `nome`, `tipo`, `clienteId`; ADMIN_EMPRESA ou ESTOQUISTA; CLIENTE exige cliente, EMPRESA exige nulo |
 | POST | `/materiais` | `codigo`, `nome`, `unidade`, `minimo`, `estoqueId`; saldo inicial zero |
 | PATCH | `/materiais/estoque` | `estoqueId`, `materialIds` (1–500); classifica materiais ainda sem proprietário |
 | PATCH | `/materiais/{id}/status` | `ativo` booleano |
@@ -44,6 +47,15 @@ Prioridade: `BAIXA`, `MEDIA`, `ALTA`. Roles: `ROLE_ADMIN_MASTER`, `ROLE_ADMIN_EM
 O antigo campo `perfil` não concede permissões. Consulte o [contrato SaaS](SAAS_RBAC_2026-11-13.md).
 Movimentos manuais: `ENTRADA`, `DEVOLUCAO`, `AJUSTE`. Ajuste recebe a **diferença**, por exemplo `-3`,
 não o saldo final. `SAIDA` é gerada apenas no consumo em OS.
+
+OS retornam `tipoAtendimento` (`LEGADO`, `INTERNO`, `CLIENTE`), `clienteId` e `clienteNome`.
+`clienteId` referencia um cliente da empresa autenticada; o tenant nunca é escolhido pelo corpo.
+Código de cliente é único por empresa, com no máximo 60 caracteres; nome exige texto e até 160.
+Não há edição, exclusão ou transferência de clientes nesta entrega.
+Uma OS CLIENTE aceita somente materiais da empresa e do próprio cliente. Sem classificação e de
+outro cliente retornam 409, sem baixa nem registro parcial. OS INTERNO/LEGADO bloqueiam materiais
+de qualquer cliente e preservam o uso anterior de materiais da empresa/sem classificação.
+Consulte o [fluxo de clientes e suas migrations](CLIENTES_E_CONSUMO_OS_2026-11-15.md).
 
 Materiais, movimentos e itens de OS retornam `estoqueId`. Nos movimentos/itens, esse valor identifica
 o estoque na época do registro; não é recalculado quando um material antigo é classificado.

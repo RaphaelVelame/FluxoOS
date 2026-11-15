@@ -26,12 +26,14 @@ public class OrdemServicoService {
     private final UsuarioRepository usuarios;
     private final AuditoriaService auditoria;
     private final ApplicationEventPublisher eventos;
+    private final ClienteService clientes;
 
-    public OrdemServicoService(OrdemServicoRepository ordens, UsuarioRepository usuarios, AuditoriaService auditoria, ApplicationEventPublisher eventos) {
+    public OrdemServicoService(OrdemServicoRepository ordens, UsuarioRepository usuarios, AuditoriaService auditoria, ApplicationEventPublisher eventos, ClienteService clientes) {
         this.ordens = ordens;
         this.usuarios = usuarios;
         this.auditoria = auditoria;
         this.eventos = eventos;
+        this.clientes = clientes;
     }
 
     @Transactional(readOnly = true)
@@ -57,14 +59,18 @@ public class OrdemServicoService {
     }
 
     public OrdemServico abrir(Usuario ator, String solicitante, String local, String problema, Prioridade prioridade) {
-        return registrarAbertura(ator, solicitante, local, problema, prioridade, UUID.randomUUID().toString());
+        return registrarAbertura(ator, solicitante, local, problema, prioridade, UUID.randomUUID().toString(), null);
     }
 
     public OrdemView abrirComChave(Usuario ator, String solicitante, String local, String problema, Prioridade prioridade, String chave) {
-        return OrdemView.de(registrarAbertura(ator, solicitante, local, problema, prioridade, chave));
+        return abrirComChave(ator, solicitante, local, problema, prioridade, chave, null);
     }
 
-    private OrdemServico registrarAbertura(Usuario ator, String solicitante, String local, String problema, Prioridade prioridade, String chave) {
+    public OrdemView abrirComChave(Usuario ator, String solicitante, String local, String problema, Prioridade prioridade, String chave, Long clienteId) {
+        return OrdemView.de(registrarAbertura(ator, solicitante, local, problema, prioridade, chave, clienteId));
+    }
+
+    private OrdemServico registrarAbertura(Usuario ator, String solicitante, String local, String problema, Prioridade prioridade, String chave, Long clienteId) {
         EscopoEmpresa.exigirRole(ator, Role.ROLE_ADMIN_EMPRESA, Role.ROLE_SUPERVISOR, Role.ROLE_SUPORTE_TECNICO);
         if (chave == null || !chave.matches("[a-zA-Z0-9-]{16,80}")) {
             throw new IllegalArgumentException("Cabeçalho Idempotency-Key obrigatório (16 a 80 caracteres).");
@@ -73,7 +79,8 @@ public class OrdemServicoService {
         Usuario autor = usuarios.buscarParaAtualizarNaEmpresa(ator.getId(), EscopoEmpresa.exigir(ator))
                 .orElseThrow(() -> new NaoEncontradoException("Usuário não encontrado."));
         EscopoEmpresa.exigirRole(autor, Role.ROLE_ADMIN_EMPRESA, Role.ROLE_SUPERVISOR, Role.ROLE_SUPORTE_TECNICO);
-        String conteudo = resumoAbertura(solicitante, local, problema, prioridade);
+        Cliente cliente = clienteId == null ? null : clientes.carregar(autor, clienteId);
+        String conteudo = resumoAbertura(solicitante, local, problema, prioridade, clienteId);
         var anterior = ordens.findByAutorAberturaIdAndChaveAbertura(autor.getId(), chave);
         if (anterior.isPresent()) {
             if (!conteudo.equals(anterior.get().getConteudoAbertura())) {
@@ -81,7 +88,7 @@ public class OrdemServicoService {
             }
             return anterior.get();
         }
-        OrdemServico nova = new OrdemServico(EscopoEmpresa.exigir(autor), solicitante, local, problema, prioridade);
+        OrdemServico nova = new OrdemServico(EscopoEmpresa.exigir(autor), solicitante, local, problema, prioridade, cliente);
         nova.identificarAbertura(autor.getId(), chave, conteudo);
         OrdemServico ordem = ordens.save(nova);
         auditoria.registrar(ordem.getId(), ator.getId(), "ABERTURA", "Ordem de serviço aberta.");
@@ -89,7 +96,7 @@ public class OrdemServicoService {
         return ordem;
     }
 
-    private static String resumoAbertura(String solicitante, String local, String problema, Prioridade prioridade) {
+    private static String resumoAbertura(String solicitante, String local, String problema, Prioridade prioridade, Long clienteId) {
         if (solicitante == null || local == null || problema == null || prioridade == null) {
             throw new IllegalArgumentException("Dados da abertura obrigatórios.");
         }
@@ -97,6 +104,12 @@ public class OrdemServicoService {
             var digest = MessageDigest.getInstance("SHA-256");
             for (String parte : List.of(solicitante, local, problema, prioridade.name())) {
                 byte[] bytes = parte.getBytes(StandardCharsets.UTF_8);
+                digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
+                digest.update(bytes);
+            }
+            // Mantém a chave original dos pedidos sem cliente; inclui o vínculo nos novos pedidos de cliente.
+            if (clienteId != null) {
+                byte[] bytes = ("cliente:" + clienteId).getBytes(StandardCharsets.UTF_8);
                 digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
                 digest.update(bytes);
             }
@@ -111,6 +124,15 @@ public class OrdemServicoService {
                 .orElseThrow(() -> new NaoEncontradoException("Técnico não encontrado."));
         ordem.atribuirEquipe(ator, tecnico);
         auditoria.registrar(id, ator.getId(), "ATRIBUICAO", "Equipe atribuída a " + tecnico.getNomeCompleto() + ".");
+    }
+
+    public OrdemView classificarCliente(Usuario ator, long id, Long clienteId) {
+        EscopoEmpresa.exigirRole(ator, Role.ROLE_ADMIN_EMPRESA);
+        OrdemServico ordem = carregarParaAtualizar(ator, id);
+        ordem.classificarAtendimento(clienteId == null ? null : clientes.carregar(ator, clienteId));
+        auditoria.registrar(id, ator.getId(), "CLIENTE_OS_IDENTIFICADO", clienteId == null
+                ? "Atendimento interno identificado." : "Cliente identificado: " + clienteId + ".");
+        return OrdemView.de(ordem);
     }
 
     public void iniciar(Usuario ator, long id) {

@@ -108,7 +108,7 @@ class HttpFirewallTest {
         assertThat(login.statusCode()).isEqualTo(200);
         String cookie=login.headers().firstValue("Set-Cookie").orElseThrow().split(";",2)[0];
         String csrf=new ObjectMapper().readTree(login.body()).get("csrf").asText();
-        String estoque="{\"codigo\":\""+java.util.UUID.randomUUID()+"\",\"nome\":\"São Lucas\",\"tipo\":\"CLIENTE\"}";
+        String estoque="{\"codigo\":\""+java.util.UUID.randomUUID()+"\",\"nome\":\"São Lucas\",\"tipo\":\"EMPRESA\"}";
         String estoqueNoLimite=" ".repeat(300_000-estoque.getBytes(StandardCharsets.UTF_8).length)+estoque;
         var criado=enviar(HttpRequest.newBuilder(uri("/api/estoques"))
                 .version(HttpClient.Version.HTTP_1_1).header("Content-Type","application/json")
